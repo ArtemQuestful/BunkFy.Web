@@ -11,7 +11,7 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ApiError } from "../../api/client";
 import type {
@@ -49,7 +49,7 @@ import {
   type WorkspaceJoinResolution,
 } from "./workspaceJoin";
 
-const PENDING_ENROLLMENT_KEY = "bunkfy.join.pending-enrollment.v2";
+const PENDING_ENROLLMENT_KEY = "bunkfy.join.pending-enrollment.v3";
 
 export function JoinWorkspacePage() {
   const location = useLocation();
@@ -63,15 +63,22 @@ export function JoinWorkspacePage() {
   const secret: WorkspaceJoinSecret | null =
     parseWorkspaceJoinSecret(location.hash) ?? readPreservedWorkspaceJoinSecret();
   const secretKey = secret ? `${secret.kind}:${secret.token}` : "missing";
-  const accountKey = session?.username ?? "";
+  const accountKey = session?.subjectId ?? "";
   const isEnrollment = secret?.kind === "enrollment";
-  const [staffProfile, setStaffProfile] = useState(() =>
-    readInviteStaffDraft(session?.username),
+  const [staffDraft, setStaffDraft] = useState(() => ({
+    subjectId: accountKey,
+    profile: readInviteStaffDraft(accountKey, session?.username),
+  }));
+  const ownerDraft = useMemo(
+    () => readInviteStaffDraft(accountKey, session?.username),
+    [accountKey, session?.username],
   );
-  const [pendingApproval, setPendingApproval] = useState(() =>
-    secret?.kind === "enrollment" &&
-      hasPendingEnrollment(secret.token, accountKey),
-  );
+  // A new actor must never render the previous actor's in-memory form, even
+  // before an effect can reset state after the account transition.
+  const staffProfile = staffDraft.subjectId === accountKey
+    ? staffDraft.profile
+    : ownerDraft;
+  const [pendingApproval, setPendingApproval] = useState(false);
   const [withdrawalConfirmation, setWithdrawalConfirmation] = useState(false);
   const [withdrawalResolution, setWithdrawalResolution] = useState<
     "withdrawn" | "expired" | null
@@ -136,7 +143,7 @@ export function JoinWorkspacePage() {
       return workspaceId;
     },
     onSuccess: () => {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      forgetPendingEnrollment(sourceId, accountKey);
       setPendingApproval(false);
       clearPreservedWorkspaceJoinSecret();
       window.history.replaceState(null, "", "/");
@@ -189,7 +196,7 @@ export function JoinWorkspacePage() {
     },
     onSuccess: (resolution) => {
       if (resolution.kind === "pending-approval") {
-        rememberPendingEnrollment(secret?.token, accountKey);
+        rememberPendingEnrollment(sourceId, accountKey);
         setPendingApproval(true);
         void staffApplication.refetch();
         return;
@@ -202,7 +209,7 @@ export function JoinWorkspacePage() {
         error instanceof ApiError &&
         error.code === "Organizations.EnrollmentClaimUnavailable"
       ) {
-        forgetPendingEnrollment(secret?.token, accountKey);
+        forgetPendingEnrollment(sourceId, accountKey);
         setPendingApproval(false);
       }
     },
@@ -233,7 +240,7 @@ export function JoinWorkspacePage() {
       return outcome;
     },
     onSuccess: (outcome) => {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      forgetPendingEnrollment(sourceId, accountKey);
       setPendingApproval(false);
       setWithdrawalConfirmation(false);
       setWithdrawalResolution(
@@ -251,11 +258,13 @@ export function JoinWorkspacePage() {
   const resetWorkspaceActivation = workspaceActivation.reset;
   const resetWithdraw = withdraw.reset;
 
+  useEffect(clearLegacyPendingEnrollmentHints, []);
+
   useEffect(() => {
-    setPendingApproval(
-      secret?.kind === "enrollment" &&
-        hasPendingEnrollment(secret.token, accountKey),
-    );
+    setPendingApproval(Boolean(
+      secret?.kind === "enrollment" && sourceId &&
+        hasPendingEnrollment(sourceId, accountKey),
+    ));
     resetJoin();
     resetWorkspaceActivation();
     resetWithdraw();
@@ -266,6 +275,7 @@ export function JoinWorkspacePage() {
     resetWorkspaceActivation,
     resetJoin,
     resetWithdraw,
+    sourceId,
     secret?.kind,
     secret?.token,
     secretKey,
@@ -278,7 +288,7 @@ export function JoinWorkspacePage() {
     if (withdrawalResolution) return;
 
     if (isWorkspaceStaffOnboardingWithdrawn(application.status)) {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      forgetPendingEnrollment(sourceId, accountKey);
       setPendingApproval(false);
       setWithdrawalResolution("withdrawn");
       clearPreservedWorkspaceJoinSecret();
@@ -287,7 +297,7 @@ export function JoinWorkspacePage() {
     }
 
     if (isWorkspaceStaffOnboardingExpired(application.status)) {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      forgetPendingEnrollment(sourceId, accountKey);
       setPendingApproval(false);
       setWithdrawalResolution("expired");
       clearPreservedWorkspaceJoinSecret();
@@ -301,7 +311,7 @@ export function JoinWorkspacePage() {
     }
 
     if (isWorkspaceStaffOnboardingTerminallyDenied(application.status)) {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      forgetPendingEnrollment(sourceId, accountKey);
       setPendingApproval(false);
       clearPreservedWorkspaceJoinSecret();
       return;
@@ -365,7 +375,7 @@ export function JoinWorkspacePage() {
   }
 
   function updateStaffProfile(profile: StaffProfileDraft) {
-    setStaffProfile(profile);
+    setStaffDraft({ subjectId: accountKey, profile });
     saveInviteStaffDraft(profile, accountKey);
   }
 
@@ -893,25 +903,52 @@ function joinApprovalLabel(
     : "Workspace owner review required";
 }
 
-function hasPendingEnrollment(token: string, identity: string): boolean {
-  return window.sessionStorage.getItem(pendingEnrollmentKey(identity)) === token;
+function hasPendingEnrollment(sourceId: string, identity: string): boolean {
+  if (!identity) return false;
+  try {
+    return window.sessionStorage.getItem(pendingEnrollmentKey(identity)) === sourceId;
+  } catch {
+    return false;
+  }
 }
 
 function rememberPendingEnrollment(
-  token: string | undefined,
+  sourceId: string | null,
   identity: string,
 ): void {
-  if (token) {
-    window.sessionStorage.setItem(pendingEnrollmentKey(identity), token);
+  if (!sourceId || !identity) return;
+  try {
+    // The server-owned source id is a retry hint, not the enrollment secret.
+    window.sessionStorage.setItem(pendingEnrollmentKey(identity), sourceId);
+  } catch {
+    // Authoritative application polling still recovers pending approval.
   }
 }
 
 function forgetPendingEnrollment(
-  token: string | undefined,
+  sourceId: string | null,
   identity: string,
 ): void {
-  if (token && hasPendingEnrollment(token, identity)) {
+  if (!sourceId || !hasPendingEnrollment(sourceId, identity)) return;
+  try {
     window.sessionStorage.removeItem(pendingEnrollmentKey(identity));
+  } catch {
+    // A confirmed server outcome must still finish when storage is blocked.
+  }
+}
+
+function clearLegacyPendingEnrollmentHints(): void {
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < window.sessionStorage.length; index += 1) {
+      const key = window.sessionStorage.key(index);
+      if (key?.startsWith("bunkfy.join.pending-enrollment.v2:")) keys.push(key);
+    }
+    // These obsolete entries duplicate enrollment secrets. The primary join
+    // secret and the server application state retain the recovery flow.
+    for (const key of keys) window.sessionStorage.removeItem(key);
+  } catch {
+    // A blocked store does not prevent joining or authoritative reconciliation.
   }
 }
 

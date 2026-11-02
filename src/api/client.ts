@@ -42,6 +42,28 @@ function rememberedHeaders(headers: Headers): void {
   headers.set("X-Gma-Remembered-CSRF", rememberedBrowserTransport.csrfToken);
 }
 
+export function accessTokenSubjectId(accessToken: string): string {
+  try {
+    const parts = accessToken.split(".");
+    if (parts.length !== 3 || !parts[1]) throw new Error("Malformed token.");
+    const base64 = parts[1].replaceAll("-", "+").replaceAll("_", "/") +
+      "=".repeat((4 - (parts[1].length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(base64), (value) => value.charCodeAt(0));
+    const payload = JSON.parse(new TextDecoder().decode(bytes)) as {
+      sub?: unknown;
+    };
+    if (
+      typeof payload.sub !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.sub)
+    ) {
+      throw new Error("Token subject is missing.");
+    }
+    return payload.sub.toLowerCase();
+  } catch {
+    throw new Error("The authenticated account identity is unavailable.");
+  }
+}
+
 export function resolveApiBaseUrl(): string {
   return trimTrailingSlash(import.meta.env.VITE_BUNKFY_API_BASE_URL?.trim() || "http://localhost:5194");
 }

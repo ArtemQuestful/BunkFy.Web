@@ -158,22 +158,18 @@ export function AuthPage({ invitation = false }: { invitation?: boolean }) {
         username,
         password,
       };
-      if (invitation && mode === "register") {
-        saveInviteStaffDraft(
-          {
-            ...staffProfile,
-            workEmail: staffProfile.workEmail.trim() || username,
-          },
-          username,
-        );
-      }
       if (mode === "login") {
         const challenge = await login(credentials);
         if (challenge) {
           setMultiFactor({ challenge, username });
         }
       } else {
-        await register(credentials);
+        await register(credentials, invitation ? (subjectId) => {
+          saveInviteStaffDraft({
+            ...staffProfile,
+            workEmail: staffProfile.workEmail.trim() || username,
+          }, subjectId);
+        } : undefined);
       }
     } catch (cause) {
       setError(publicAuthenticationErrorMessage(

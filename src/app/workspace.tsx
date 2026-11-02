@@ -9,13 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import type {
-  OrganizationListResponse,
   OrganizationMembershipSummary,
   Property,
   StationWorkspaceSettings,
 } from "../api/types";
 import { loadAllProperties } from "../features/properties/propertiesApi";
 import { reconcileSelectedWorkspaceId } from "../features/workspaces/workspaceCatalogue";
+import { loadAllWorkspaces } from "../features/workspaces/workspacesApi";
 import { useSession } from "./session";
 import { useProductCapabilities } from "./productCapabilities";
 
@@ -59,9 +59,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   });
   const workspacesQuery = useQuery({
     queryKey: ["organizations", "mine"],
-    queryFn: () => request<OrganizationListResponse>("/api/organizations?page=1&pageSize=100"),
+    queryFn: (context) => loadAllWorkspaces(request, context.signal),
   });
-  const workspaces = workspacesQuery.data?.items ?? [];
+  const workspaces = workspacesQuery.data ?? [];
   const workspaceCatalogueCurrent = Boolean(
     workspacesQuery.data !== undefined &&
       !workspacesQuery.error &&
@@ -152,7 +152,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       selectedWorkspaceId,
       setSelectedWorkspaceId,
       refetchWorkspaces: async () => {
-        await workspacesQuery.refetch();
+        await workspacesQuery.refetch({ throwOnError: true });
       },
       properties,
       propertiesLoaded: propertiesQuery.data !== undefined,

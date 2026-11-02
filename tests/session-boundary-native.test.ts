@@ -14,11 +14,25 @@ import React,{useEffect} from "react";
 import {createRoot} from "react-dom/client";
 import {QueryClient,QueryClientProvider,useQueryClient} from "@tanstack/react-query";
 import {SessionProvider,useSession} from "/src/app/session.tsx";
+import {MemoryRouter} from "react-router";
+import {WorkspaceProvider} from "/src/app/workspace.tsx";
+import {JoinWorkspacePage} from "/src/features/workspaces/JoinWorkspacePage.tsx";
+import {saveInviteStaffDraft} from "/src/features/workspaces/staffOnboarding.ts";
+const privateDraft={displayName:"Synthetic A",legalName:"Synthetic Legal Person A",workEmail:"synthetic-a@example.invalid",workPhone:"",jobTitle:"Synthetic role",department:""};
+let capturedRequests, capturePreviousRender;
 import "/src/styles.css";
 function Capture(){
  const auth=useSession(),query=useQueryClient();
- useEffect(()=>{window.sessionHarness={adoptBrowserAccount:auth.adoptBrowserAccount,setPrivate:()=>query.setQueryData(["private"],"old-actor"),hasPrivate:()=>query.getQueryData(["private"])??null};},[auth,query]);
- return <main><output data-session>{auth.session?.username??"Signed out"}</output><output data-restoring>{auth.isRestoring?"restoring":"ready"}</output></main>;
+ useEffect(()=>{window.sessionHarness={
+ registerWithDraft:()=>auth.register({username:"registered@example.invalid",password:"synthetic-password"},subjectId=>saveInviteStaffDraft(privateDraft,subjectId)),
+ adoptBrowserAccount:auth.adoptBrowserAccount,
+ captureRequests:()=>{capturedRequests=auth.captureRequestContext();capturePreviousRender=auth.captureRequestContext;},
+ sendCaptured:async()=>{try{await capturedRequests.request("/api/synthetic-mutation",{method:"POST"});return "sent";}catch{return "rejected";}},
+ captureStaleRender:()=>{try{capturePreviousRender();return "captured";}catch{return "rejected";}},
+ selectCaptured:workspaceId=>{try{capturedRequests=capturedRequests.selectWorkspace(workspaceId);return "selected";}catch{return "rejected";}},
+ selectWorkspace:auth.selectWorkspace,
+ setPrivate:()=>query.setQueryData(["private"],"old-actor"),hasPrivate:()=>query.getQueryData(["private"])??null};},[auth,query]);
+ return <main><output data-session>{auth.session?.username??"Signed out"}</output><output data-restoring>{auth.isRestoring?"restoring":"ready"}</output><output data-subject>{auth.session?.subjectId??""}</output>{auth.session&&location.search.includes("join-probe")&&<MemoryRouter initialEntries={["/join#invitation=synthetic-token"]}><WorkspaceProvider><JoinWorkspacePage/></WorkspaceProvider></MemoryRouter>}</main>;
 }
 const query=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
 createRoot(document.getElementById("root")).render(<QueryClientProvider client={query}><SessionProvider restoreOnMount={!location.search.includes("no-restore")}><Capture/></SessionProvider></QueryClientProvider>);
@@ -77,6 +91,94 @@ afterAll(async () => {
 });
 
 describe("native cross-tab remembered-session boundary", () => {
+  it("rejects a prepared mutation after scope or actor changes and allows the explicitly guarded onboarding transition", async () => {
+    const page = await context.newPage();
+    const writes: { tenant: string | undefined; authorization: string | undefined }[] = [];
+    page.on("pageerror", error => runtimeErrors.push(error.message));
+    await page.route("**/api/synthetic-mutation", async route => {
+      const headers = route.request().headers();
+      writes.push({ tenant: headers["x-tenant-id"], authorization: headers.authorization });
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    try {
+      await page.goto(origin + "__session-boundary-native?no-restore=1");
+      await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { sessionHarness?: unknown }).sessionHarness))).toBe(true);
+      await page.evaluate(account => (window as unknown as { sessionHarness: { adoptBrowserAccount(value: unknown): void } }).sessionHarness.adoptBrowserAccount(account), { ...identityA, accessToken: token(subjectA, sessionA) });
+      await expect.poll(() => page.locator("[data-subject]").textContent()).toBe(subjectA);
+      await page.evaluate(() => (window as unknown as { sessionHarness: { captureRequests(): void } }).sessionHarness.captureRequests());
+      expect(await page.evaluate(() => (window as unknown as { sessionHarness: { sendCaptured(): Promise<string> } }).sessionHarness.sendCaptured())).toBe("sent");
+
+      // A local operation that awaited hashing must not send into the newly
+      // selected tenant through the stable request function.
+      await page.evaluate(() => (window as unknown as { sessionHarness: { selectWorkspace(id: string): void } }).sessionHarness.selectWorkspace("different-workspace"));
+      expect(await page.evaluate(() => (window as unknown as { sessionHarness: { sendCaptured(): Promise<string> } }).sessionHarness.sendCaptured())).toBe("rejected");
+      expect(await page.evaluate(() => (window as unknown as { sessionHarness: { captureStaleRender(): string } }).sessionHarness.captureStaleRender())).toBe("rejected");
+      expect(await page.evaluate(() => (window as unknown as { sessionHarness: { selectCaptured(id: string): string } }).sessionHarness.selectCaptured("synthetic-workspace"))).toBe("rejected");
+      expect(writes).toHaveLength(1);
+
+      // Creation intentionally enters its acknowledged workspace. The guarded
+      // switch is synchronous; its returned context is the only valid one.
+      await page.evaluate(() => (window as unknown as { sessionHarness: { captureRequests(): void } }).sessionHarness.captureRequests());
+      expect(await page.evaluate(() => (window as unknown as { sessionHarness: { selectCaptured(id: string): string } }).sessionHarness.selectCaptured("newly-created-workspace"))).toBe("selected");
+      expect(await page.evaluate(() => (window as unknown as { sessionHarness: { sendCaptured(): Promise<string> } }).sessionHarness.sendCaptured())).toBe("sent");
+      expect(writes.map(write => write.tenant)).toEqual(["synthetic-workspace", "newly-created-workspace"]);
+      expect(writes.every(write => write.authorization === `Bearer ${token(subjectA, sessionA)}`)).toBe(true);
+
+      await page.evaluate(account => (window as unknown as { sessionHarness: { adoptBrowserAccount(value: unknown): void } }).sessionHarness.adoptBrowserAccount(account), { ...identityB, tenantId: "newly-created-workspace", accessToken: token(subjectB, sessionB) });
+      await expect.poll(() => page.locator("[data-subject]").textContent()).toBe(subjectB);
+      expect(await page.evaluate(() => (window as unknown as { sessionHarness: { sendCaptured(): Promise<string> } }).sessionHarness.sendCaptured())).toBe("rejected");
+      expect(await page.evaluate(() => (window as unknown as { sessionHarness: { selectCaptured(id: string): string } }).sessionHarness.selectCaptured("newly-created-workspace"))).toBe("rejected");
+      expect(writes).toHaveLength(2);
+    } finally { await page.close(); }
+  }, 30000);
+
+  it("binds a registration draft before the real join form renders and isolates an account with the same display label", async () => {
+    const page = await context.newPage();
+    page.on("pageerror", error => runtimeErrors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") runtimeErrors.push(message.text()); });
+    await page.route("**/api/**", async route => {
+      const path = new URL(route.request().url()).pathname;
+      if (!path.startsWith("/api/")) return route.continue();
+      if (path === "/api/auth/browser/register") return route.fulfill(response(token(subjectA, sessionA)));
+      if (path === "/api/organization-invitations/preview") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ invitationId: "55555555-5555-4555-8555-555555555555", organizationId: "66666666-6666-4666-8666-666666666666", organizationName: "Synthetic workspace", organizationSlug: "synthetic", recipientBound: false, expiresAtUtc: "2030-01-01T00:00:00Z", status: "pending" }) });
+      if (path === "/api/organizations") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], hasMore: false, totalCount: 0 }) });
+      throw new Error("Unexpected owned draft fixture request: " + path);
+    });
+    try {
+      await page.goto(origin + "__session-boundary-native?no-restore=1&join-probe=1");
+      await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { sessionHarness?: unknown }).sessionHarness))).toBe(true);
+      await page.evaluate(() => (window as unknown as { sessionHarness: { registerWithDraft(): Promise<void> } }).sessionHarness.registerWithDraft());
+      const legalName = page.getByLabel("Legal name (optional)");
+      await expect.poll(() => legalName.inputValue()).toBe("Synthetic Legal Person A");
+      await legalName.fill("Edited private draft A");
+      await page.evaluate(account => (window as unknown as { sessionHarness: { adoptBrowserAccount(value: unknown): void } }).sessionHarness.adoptBrowserAccount(account), { ...identityA, tenantId: "global", username: "GitHub account", accessToken: token(subjectA, sessionA) });
+      await expect.poll(() => legalName.inputValue()).toBe("Edited private draft A");
+      await page.evaluate(account => (window as unknown as { sessionHarness: { adoptBrowserAccount(value: unknown): void } }).sessionHarness.adoptBrowserAccount(account), { ...identityB, tenantId: "global", username: "GitHub account", accessToken: token(subjectB, sessionB) });
+      await expect.poll(() => page.locator("[data-subject]").textContent()).toBe(subjectB);
+      await expect.poll(() => legalName.inputValue()).toBe("");
+      await legalName.fill("Private draft B");
+      await page.evaluate(account => (window as unknown as { sessionHarness: { adoptBrowserAccount(value: unknown): void } }).sessionHarness.adoptBrowserAccount(account), { ...identityA, tenantId: "global", username: "GitHub account", generation: "return-to-a", accessToken: token(subjectA, sessionA) });
+      await expect.poll(() => legalName.inputValue()).toBe("Edited private draft A");
+    } finally { await page.close(); }
+  }, 30000);
+
+  it("does not hand off a private draft when the registration token lacks a valid session identity", async () => {
+    const page = await context.newPage();
+    const malformed = `e30.${Buffer.from(JSON.stringify({ sub: subjectA })).toString("base64url")}.synthetic`;
+    await page.route("**/api/auth/browser/register", route => route.fulfill(response(malformed)));
+    try {
+      await page.goto(origin + "__session-boundary-native?no-restore=1");
+      await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { sessionHarness?: unknown }).sessionHarness))).toBe(true);
+      const failed = await page.evaluate(async () => {
+        try { await (window as unknown as { sessionHarness: { registerWithDraft(): Promise<void> } }).sessionHarness.registerWithDraft(); return false; }
+        catch { return true; }
+      });
+      expect(failed).toBe(true);
+      expect(await page.locator("[data-session]").textContent()).toBe("Signed out");
+      expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith("bunkfy.invite.staff-profile.v3:")))).toEqual([]);
+    } finally { await page.close(); }
+  }, 30000);
+
   it("rejects a late old refresh after another page publishes a new actor", async () => {
     const pageA = await context.newPage();
     const pageB = await context.newPage();

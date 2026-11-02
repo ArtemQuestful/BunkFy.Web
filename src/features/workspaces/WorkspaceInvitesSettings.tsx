@@ -49,6 +49,16 @@ import {
   workspaceJoiningView,
   type WorkspaceJoiningView,
 } from "./workspaceSettingsAccess";
+import {
+  clearWorkspaceJoinSourceIssuanceAttempt,
+  clearWorkspaceJoinSourceReplacementAttempt,
+  finalizeWorkspaceJoinSourceIssuance,
+  resolveWorkspaceJoinSourceIssuanceAttempt,
+  resolveWorkspaceJoinSourceReplacementAttempt,
+  workspaceJoinSourceIssuanceOutcome,
+  type WorkspaceJoinSourceIssuanceAttempt,
+  type WorkspaceJoinSourceReplacementAttempt,
+} from "./workspaceJoinSourceAttempt";
 
 const ACTIVE_PROFILE_PAGE_SIZE = 100;
 const SOURCE_PAGE_SIZE = 10;
@@ -112,6 +122,29 @@ export function WorkspaceInvitesSettings({
     if (nextView === "invite") next.delete("joining");
     else next.set("joining", nextView);
     setSearchParams(next, { replace: true });
+  }
+
+  function handleIssuance(
+    kind: IssuedJoinLink["kind"],
+    issuance: WorkspaceStaffJoinSourceIssuance,
+    lifetimeHours: number,
+    action: "create" | "replace",
+  ) {
+    const outcome = workspaceJoinSourceIssuanceOutcome(issuance);
+    if (outcome.kind === "token") {
+      setTokenNotice(null);
+      setIssued({ kind, token: outcome.token, lifetimeHours });
+      return;
+    }
+
+    if (outcome.kind === "reconciled") {
+      setTokenNotice(action === "create"
+        ? "This source was already issued, so its one-time token cannot be shown again. Replace it to create a new link."
+        : "The replacement exists, but its one-time token was already returned and cannot be replayed. Replace it again if the link was lost.");
+      return;
+    }
+
+    setTokenNotice("The server returned an inconsistent one-time-token receipt, so no token was displayed. Refresh the issued-source list before retrying or replacing it.");
   }
 
   return (
@@ -179,14 +212,8 @@ export function WorkspaceInvitesSettings({
             profiles={profilesUsable ? profiles.data?.items ?? [] : []}
             properties={propertiesUsable ? properties : []}
             canReplace={canGrant}
-            onIssued={(kind, issuance, lifetimeHours) => {
-              if (!issuance.token) {
-                setTokenNotice("The replacement exists, but its one-time token was already returned and cannot be replayed. Replace it again if the link was lost.");
-                return;
-              }
-              setTokenNotice(null);
-              setIssued({ kind, token: issuance.token, lifetimeHours });
-            }}
+            onIssued={(kind, issuance, lifetimeHours) =>
+              handleIssuance(kind, issuance, lifetimeHours, "replace")}
           />
         </div>
       )}
@@ -218,14 +245,14 @@ function JoinSourceCreation({
   onIssued: (kind: IssuedJoinLink["kind"], issuance: WorkspaceStaffJoinSourceIssuance, lifetimeHours: number) => void;
 }) {
   const { emailVerificationEnabled } = useProductCapabilities();
-  const { request } = useSession();
+  const { captureRequestContext, session } = useSession();
   const queryClient = useQueryClient();
   const reusableProfiles = profiles.filter((profile) => REUSABLE_PROFILE_KEYS.has(profile.key));
   const [email, setEmail] = useState("");
   const [inviteProfileId, setInviteProfileId] = useState("");
   const [invitePropertyIds, setInvitePropertyIds] = useState<string[]>([]);
   const [inviteLifetimeHours, setInviteLifetimeHours] = useState(72);
-  const [inviteSourceId, setInviteSourceId] = useState(() => crypto.randomUUID());
+  const inviteAttempt = useRef<WorkspaceJoinSourceIssuanceAttempt | null>(null);
   const [enrollmentProfileId, setEnrollmentProfileId] = useState("");
   const [enrollmentPropertyIds, setEnrollmentPropertyIds] = useState<string[]>([]);
   const [enrollmentLifetimeHours, setEnrollmentLifetimeHours] = useState(24);
@@ -233,7 +260,7 @@ function JoinSourceCreation({
   const [approvalMode, setApprovalMode] = useState<
     IssueWorkspaceEnrollmentLinkRequest["approvalMode"]
   >("requires-approval");
-  const [enrollmentSourceId, setEnrollmentSourceId] = useState(() => crypto.randomUUID());
+  const enrollmentAttempt = useRef<WorkspaceJoinSourceIssuanceAttempt | null>(null);
 
   useEffect(() => {
     if (!profiles.some((profile) => profile.profileId === inviteProfileId)) {
@@ -247,64 +274,129 @@ function JoinSourceCreation({
   }, [enrollmentProfileId, reusableProfiles]);
 
   const invite = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!canCreate) {
         throw new Error("Refresh roles, properties, and workspace authority before creating an invitation.");
       }
+      const accountId = session?.subjectId;
+      if (!accountId) throw new Error("You are signed out.");
+      const context = captureRequestContext(workspaceId);
       const profile = profiles.find((item) => item.profileId === inviteProfileId);
       if (!profile) throw new Error("Choose a role for this invitation.");
-      return request<WorkspaceStaffJoinSourceIssuance>("/api/workspace-staff-enrollment/sources/invitations", {
+      const attempt = await resolveWorkspaceJoinSourceIssuanceAttempt(
+        inviteAttempt.current,
+        accountId,
+        {
+          workspaceId,
+          kind: "invitation",
+          recipientEmail: email,
+          lifetimeHours: inviteLifetimeHours,
+          profileKey: profile.key,
+          profileId: profile.profileId,
+          propertyIds: invitePropertyIds,
+          maximumClaims: null,
+          approvalMode: null,
+        },
+        { assertCurrent: context.assertCurrent },
+      );
+      context.assertCurrent();
+      inviteAttempt.current = attempt;
+      const result = await context.request<WorkspaceStaffJoinSourceIssuance>("/api/workspace-staff-enrollment/sources/invitations", {
         method: "POST",
         body: JSON.stringify({
-          sourceId: inviteSourceId,
+          sourceId: attempt.operationId,
           recipientEmail: email.trim() || null,
           lifetimeHours: inviteLifetimeHours,
           profileKey: profile.key,
           propertyIds: invitePropertyIds,
         }),
       });
+      return { result, context, accountId, lifetimeHours: inviteLifetimeHours };
     },
-    onSuccess: async (result) => {
-      onIssued("invitation", result, inviteLifetimeHours);
-      setInviteSourceId(crypto.randomUUID());
+    onSuccess: async ({ result, context, accountId, lifetimeHours }) => {
+      context.assertCurrent();
+      const outcome = await finalizeWorkspaceJoinSourceIssuance(
+        result,
+        () => clearWorkspaceJoinSourceIssuanceAttempt(
+          accountId,
+          workspaceId,
+          "invitation",
+          undefined,
+          context.assertCurrent,
+        ),
+      );
+      context.assertCurrent();
+      if (outcome.kind !== "invalid") inviteAttempt.current = null;
+      onIssued("invitation", result, lifetimeHours);
       await queryClient.invalidateQueries({ queryKey: ["workspace-access", workspaceId, "join-sources"] });
     },
   });
   const enrollment = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!canCreate) {
         throw new Error("Refresh roles, properties, and workspace authority before creating a team QR.");
       }
+      const accountId = session?.subjectId;
+      if (!accountId) throw new Error("You are signed out.");
+      const context = captureRequestContext(workspaceId);
       const profile = reusableProfiles.find((item) => item.profileId === enrollmentProfileId);
       if (!profile) throw new Error("Choose a reusable low-privilege role.");
-      const payload: IssueWorkspaceEnrollmentLinkRequest = {
-        sourceId: enrollmentSourceId,
-        lifetimeHours: enrollmentLifetimeHours,
-        maximumClaims,
-        approvalMode,
-        profileKey: profile.key,
-        propertyIds: enrollmentPropertyIds,
-      };
-      return request<WorkspaceStaffJoinSourceIssuance>("/api/workspace-staff-enrollment/sources/enrollment-links", {
+      const attempt = await resolveWorkspaceJoinSourceIssuanceAttempt(
+        enrollmentAttempt.current,
+        accountId,
+        {
+          workspaceId,
+          kind: "enrollment",
+          recipientEmail: null,
+          lifetimeHours: enrollmentLifetimeHours,
+          profileKey: profile.key,
+          profileId: profile.profileId,
+          propertyIds: enrollmentPropertyIds,
+          maximumClaims,
+          approvalMode,
+        },
+        { assertCurrent: context.assertCurrent },
+      );
+      context.assertCurrent();
+      enrollmentAttempt.current = attempt;
+      const result = await context.request<WorkspaceStaffJoinSourceIssuance>("/api/workspace-staff-enrollment/sources/enrollment-links", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          sourceId: attempt.operationId,
+          lifetimeHours: enrollmentLifetimeHours,
+          maximumClaims,
+          approvalMode,
+          profileKey: profile.key,
+          propertyIds: enrollmentPropertyIds,
+        }),
       });
+      return { result, context, accountId, lifetimeHours: enrollmentLifetimeHours };
     },
-    onSuccess: async (result) => {
-      onIssued("enrollment", result, enrollmentLifetimeHours);
-      setEnrollmentSourceId(crypto.randomUUID());
+    onSuccess: async ({ result, context, accountId, lifetimeHours }) => {
+      context.assertCurrent();
+      const outcome = await finalizeWorkspaceJoinSourceIssuance(
+        result,
+        () => clearWorkspaceJoinSourceIssuanceAttempt(
+          accountId,
+          workspaceId,
+          "enrollment",
+          undefined,
+          context.assertCurrent,
+        ),
+      );
+      context.assertCurrent();
+      if (outcome.kind !== "invalid") enrollmentAttempt.current = null;
+      onIssued("enrollment", result, lifetimeHours);
       await queryClient.invalidateQueries({ queryKey: ["workspace-access", workspaceId, "join-sources"] });
     },
   });
 
   function changeInviteProfile(value: string) {
     setInviteProfileId(value);
-    setInviteSourceId(crypto.randomUUID());
   }
 
   function changeEnrollmentProfile(value: string) {
     setEnrollmentProfileId(value);
-    setEnrollmentSourceId(crypto.randomUUID());
   }
 
   return (
@@ -328,7 +420,7 @@ function JoinSourceCreation({
               type="email"
               value={email}
               disabled={!canCreate}
-              onChange={(event) => { setEmail(event.target.value); setInviteSourceId(crypto.randomUUID()); }}
+              onChange={(event) => { setEmail(event.target.value); }}
               placeholder="staff@example.com"
             />
           </label>
@@ -346,12 +438,12 @@ function JoinSourceCreation({
           <PropertyScopeField
             properties={properties}
             propertyIds={invitePropertyIds}
-            onChange={(ids) => { setInvitePropertyIds(ids); setInviteSourceId(crypto.randomUUID()); }}
+            onChange={(ids) => { setInvitePropertyIds(ids); }}
             disabled={!canCreate}
           />
           <LifetimeField
             value={inviteLifetimeHours}
-            onChange={(value) => { setInviteLifetimeHours(value); setInviteSourceId(crypto.randomUUID()); }}
+            onChange={(value) => { setInviteLifetimeHours(value); }}
             disabled={!canCreate}
           />
           {invite.error && <SettingsError error={invite.error} />}
@@ -376,7 +468,7 @@ function JoinSourceCreation({
           <PropertyScopeField
             properties={properties}
             propertyIds={enrollmentPropertyIds}
-            onChange={(ids) => { setEnrollmentPropertyIds(ids); setEnrollmentSourceId(crypto.randomUUID()); }}
+            onChange={(ids) => { setEnrollmentPropertyIds(ids); }}
             disabled={!canCreate}
           />
           <div className="grid gap-4 sm:grid-cols-2">
@@ -389,7 +481,7 @@ function JoinSourceCreation({
                 max={1000}
                 value={maximumClaims}
                 disabled={!canCreate}
-                onChange={(event) => { setMaximumClaims(Number(event.target.value)); setEnrollmentSourceId(crypto.randomUUID()); }}
+                onChange={(event) => { setMaximumClaims(Number(event.target.value)); }}
               />
             </label>
             <label className="block">
@@ -400,7 +492,6 @@ function JoinSourceCreation({
                   const selected = ENROLLMENT_APPROVAL_OPTIONS.find((option) => option.value === value);
                   if (!selected) return;
                   setApprovalMode(selected.value);
-                  setEnrollmentSourceId(crypto.randomUUID());
                 }}
                 ariaLabel="Enrollment approval"
                 disabled={!canCreate}
@@ -410,7 +501,7 @@ function JoinSourceCreation({
           </div>
           <LifetimeField
             value={enrollmentLifetimeHours}
-            onChange={(value) => { setEnrollmentLifetimeHours(value); setEnrollmentSourceId(crypto.randomUUID()); }}
+            onChange={(value) => { setEnrollmentLifetimeHours(value); }}
             disabled={!canCreate}
           />
           {enrollment.error && <SettingsError error={enrollment.error} />}
@@ -439,9 +530,11 @@ function JoinSourceLifecycle({
   canReplace: boolean;
   onIssued: (kind: IssuedJoinLink["kind"], issuance: WorkspaceStaffJoinSourceIssuance, lifetimeHours: number) => void;
 }) {
-  const { request } = useSession();
+  const { request, captureRequestContext, session } = useSession();
   const queryClient = useQueryClient();
-  const replacementIds = useRef(new Map<string, string>());
+  const replacementAttempts = useRef(
+    new Map<string, WorkspaceJoinSourceReplacementAttempt>(),
+  );
   const [page, setPage] = useState(1);
   const sourceKind = kind === "invitation" ? 1 : 2;
   const sources = useQuery({
@@ -467,33 +560,68 @@ function JoinSourceLifecycle({
   );
   const management = useMutation({
     mutationFn: async ({ source, action }: { source: WorkspaceStaffJoinSource; action: "deny" | "replace" }) => {
+      const context = captureRequestContext(workspaceId);
+      const accountId = session?.subjectId;
+      if (!accountId) throw new Error("You are signed out.");
       const base = source.sourceKind === 1 ? "invitations" : "enrollment-links";
       if (action === "replace") {
         if (!replacementAllowed) {
           throw new Error("Refresh the issued source and workspace authority before replacing it.");
         }
-        let replacementSourceId = replacementIds.current.get(source.sourceId);
-        if (!replacementSourceId) {
-          replacementSourceId = crypto.randomUUID();
-          replacementIds.current.set(source.sourceId, replacementSourceId);
-        }
-        return request<WorkspaceStaffJoinSourceReplacement>(
+        const lifetimeHours = source.sourceKind === 1 ? 72 : 24;
+        const replacementPayload = {
+          workspaceId,
+          sourceId: source.sourceId,
+          sourceKind: source.sourceKind,
+          expectedVersion: source.version,
+          lifetimeHours,
+        };
+        const replacementAttempt = await resolveWorkspaceJoinSourceReplacementAttempt(
+          replacementAttempts.current.get(source.sourceId) ?? null,
+          accountId,
+          replacementPayload,
+          { assertCurrent: context.assertCurrent },
+        );
+        context.assertCurrent();
+        replacementAttempts.current.set(source.sourceId, replacementAttempt);
+        const result = await context.request<WorkspaceStaffJoinSourceReplacement>(
           `/api/workspace-staff-enrollment/sources/${base}/${source.sourceId}/replace`,
           {
             method: "POST",
-            body: JSON.stringify({ replacementSourceId, expectedVersion: source.version, lifetimeHours: source.sourceKind === 1 ? 72 : 24 }),
+            body: JSON.stringify({
+              replacementSourceId: replacementAttempt.operationId,
+              expectedVersion: source.version,
+              lifetimeHours,
+            }),
           },
         );
+        return { result, context, accountId };
       }
       const actionName = source.sourceKind === 1 ? "revoke" : "disable";
-      return request<WorkspaceStaffJoinSource>(
+      const result = await context.request<WorkspaceStaffJoinSource>(
         `/api/workspace-staff-enrollment/sources/${base}/${source.sourceId}/${actionName}`,
         { method: "POST", body: JSON.stringify({ expectedVersion: source.version }) },
       );
+      return { result, context, accountId };
     },
-    onSuccess: async (result, variables) => {
+    onSuccess: async ({ result, context, accountId }, variables) => {
+      context.assertCurrent();
       if (variables.action === "replace" && "replacement" in result) {
-        replacementIds.current.delete(variables.source.sourceId);
+        const lifetimeHours = variables.source.sourceKind === 1 ? 72 : 24;
+        const outcome = await finalizeWorkspaceJoinSourceIssuance(
+          result.replacement,
+          () => clearWorkspaceJoinSourceReplacementAttempt(accountId, {
+            workspaceId,
+            sourceId: variables.source.sourceId,
+            sourceKind: variables.source.sourceKind,
+            expectedVersion: variables.source.version,
+            lifetimeHours,
+          }, undefined, context.assertCurrent),
+        );
+        context.assertCurrent();
+        if (outcome.kind !== "invalid") {
+          replacementAttempts.current.delete(variables.source.sourceId);
+        }
         onIssued(variables.source.sourceKind === 1 ? "invitation" : "enrollment", result.replacement, variables.source.sourceKind === 1 ? 72 : 24);
       }
       await queryClient.invalidateQueries({ queryKey: ["workspace-access", workspaceId, "join-sources"] });

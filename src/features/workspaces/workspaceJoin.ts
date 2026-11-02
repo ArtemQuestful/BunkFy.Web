@@ -8,6 +8,7 @@ export type WorkspaceJoinSecret = {
 };
 
 const WORKSPACE_JOIN_SECRET_KEY = "bunkfy.join.secret.v1";
+let preservedJoinSecret: WorkspaceJoinSecret | null | undefined;
 
 export function parseWorkspaceJoinSecret(hash: string): WorkspaceJoinSecret | null {
   const parameters = new URLSearchParams(hash.replace(/^#/, ""));
@@ -20,12 +21,18 @@ export function parseWorkspaceJoinSecret(hash: string): WorkspaceJoinSecret | nu
 export function preserveWorkspaceJoinSecret(hash: string): WorkspaceJoinSecret | null {
   const secret = parseWorkspaceJoinSecret(hash);
   if (secret) {
-    window.sessionStorage.setItem(WORKSPACE_JOIN_SECRET_KEY, JSON.stringify(secret));
+    preservedJoinSecret = { ...secret };
+    try {
+      window.sessionStorage.setItem(WORKSPACE_JOIN_SECRET_KEY, JSON.stringify(secret));
+    } catch {
+      // Keep the current join usable while the URL fragment is scrubbed.
+    }
   }
   return secret;
 }
 
 export function readPreservedWorkspaceJoinSecret(): WorkspaceJoinSecret | null {
+  if (preservedJoinSecret !== undefined) return preservedJoinSecret ? { ...preservedJoinSecret } : null;
   try {
     const value = window.sessionStorage.getItem(WORKSPACE_JOIN_SECRET_KEY);
     if (!value) return null;
@@ -40,7 +47,12 @@ export function readPreservedWorkspaceJoinSecret(): WorkspaceJoinSecret | null {
 }
 
 export function clearPreservedWorkspaceJoinSecret(): void {
-  window.sessionStorage.removeItem(WORKSPACE_JOIN_SECRET_KEY);
+  preservedJoinSecret = null;
+  try {
+    window.sessionStorage.removeItem(WORKSPACE_JOIN_SECRET_KEY);
+  } catch {
+    // Clearing the current join must finish even when browser storage is blocked.
+  }
 }
 
 export function resolveEnrollmentJoin(

@@ -40,6 +40,7 @@ import {
   workspaceSettingsTab,
 } from "./workspaceSettingsAccess";
 import {
+  clearWorkspaceUpdateAttempt,
   resolveWorkspaceUpdateAttempt,
   type WorkspaceUpdateAttempt,
   type WorkspaceUpdatePayload,
@@ -323,8 +324,9 @@ export function WorkspaceSettingsPage() {
           )}
           {tab === "general" && (
             <GeneralSettings
-              key={workspace.organizationId}
+              key={`${workspace.organizationId}:${session?.subjectId ?? ""}:${session?.sessionId ?? ""}`}
               workspace={workspace}
+              accountId={session?.subjectId ?? ""}
               owner={owner}
               authorityCurrent={workspaceAuthorityCurrent}
               onSaved={refetchWorkspaces}
@@ -367,6 +369,7 @@ export function WorkspaceSettingsPage() {
           )}
           {tab === "invites" && capabilities.canManageInvites && (
             <WorkspaceInvitesSettings
+              key={`${workspace.organizationId}:${session?.subjectId ?? ""}:${session?.sessionId ?? ""}`}
               workspaceId={workspace.organizationId}
               properties={properties}
               propertySource={propertySource}
@@ -391,49 +394,62 @@ export function WorkspaceSettingsPage() {
 
 function GeneralSettings({
   workspace,
+  accountId,
   owner,
   authorityCurrent,
   onSaved,
 }: {
   workspace: Organization;
+  accountId: string;
   owner: boolean;
   authorityCurrent: boolean;
   onSaved: () => Promise<void>;
 }) {
   const { isOffline } = useNetworkStatus();
-  const { request } = useSession();
+  const { captureRequestContext } = useSession();
   const canManage = owner && authorityCurrent;
   const [name, setName] = useState(workspace.name);
   const [slug, setSlug] = useState(workspace.slug);
   const updateAttempt = useRef<WorkspaceUpdateAttempt | null>(null);
   const update = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      if (!accountId) throw new Error("You are signed out.");
+      const context = captureRequestContext(workspace.organizationId);
       const payload: WorkspaceUpdatePayload = {
         organizationId: workspace.organizationId,
         expectedVersion: workspace.version,
         name,
         slug,
       };
-      updateAttempt.current = resolveWorkspaceUpdateAttempt(
+      const attempt = await resolveWorkspaceUpdateAttempt(
         updateAttempt.current,
+        accountId,
         payload,
+        { assertCurrent: context.assertCurrent },
       );
-      return request<Organization>(
+      context.assertCurrent();
+      updateAttempt.current = attempt;
+      const result = await context.request<Organization>(
         `/api/organizations/${workspace.organizationId}`,
         {
           method: "PUT",
           body: JSON.stringify({
-            operationId: updateAttempt.current.operationId,
+            operationId: attempt.operationId,
             name: name.trim(),
             slug: slug.trim(),
             expectedVersion: workspace.version,
           }),
         },
       );
+      return { result, context };
     },
-    onSuccess: async () => {
-      updateAttempt.current = null;
+    onSuccess: async ({ context }) => {
+      context.assertCurrent();
       await onSaved();
+      context.assertCurrent();
+      await clearWorkspaceUpdateAttempt(accountId, workspace.organizationId, undefined, context.assertCurrent);
+      context.assertCurrent();
+      updateAttempt.current = null;
     },
   });
   return (
