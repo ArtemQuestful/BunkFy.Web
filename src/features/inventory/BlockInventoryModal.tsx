@@ -152,7 +152,7 @@ function BlockInventoryForm({ editor, initialRange, initialTargetId, sources, in
           placeholder="Maintenance, private use, deep clean…" required disabled={locked} />
       </label>
       {reason.length > 0 && !reason.trim() && <p role="alert" className="text-sm text-error">Enter a reason, not only spaces.</p>}
-      {preview && <section role="status" data-block-preview className="rounded-lg border border-base-300 bg-base-200 p-4 text-sm">
+      {preview && <section role="status" data-block-preview data-feedback-focus className="rounded-lg border border-base-300 bg-base-200 p-4 text-sm">
         <h4 className="font-semibold">{preview.title}</h4><p className="mt-1">{preview.description}</p>
         <p className="mt-2 font-semibold">{preview.impactLabel}</p>
         {preview.canConfirm && <p className="mt-2">Confirm this exact target, dates, reason and server selection. Changes require another preview.</p>}
