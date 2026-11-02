@@ -17,7 +17,7 @@ import type { InventoryMutationEvidence } from "../inventory/inventoryMutationAu
 type SpacesBlocksProps = Parameters<typeof SpacesBlocksContent>[0];
 
 export function SpacesBlocksSection(props: Omit<SpacesBlocksProps, "editor">) {
-  const editor = useManualBlockEditor({ propertyId: props.propertyId, propertyName: props.propertyName, rooms: props.rooms, blocks: props.blocks, mayManage: props.mayManageBlocks, evidence: props.mutationEvidence, onSuccess: props.onMutationSuccess });
+  const editor = useManualBlockEditor({ propertyId: props.propertyId, propertyName: props.propertyName, rooms: props.rooms, blocks: props.blocks, mayManage: props.mayManageBlocks, mayManageGroups: props.mayManageGroups, evidence: props.mutationEvidence, onSuccess: props.onMutationSuccess });
   return <SpacesBlocksContent {...props} editor={editor} />;
 }
 
@@ -59,6 +59,7 @@ export function SpacesBlocksContent({
   selectedBlockGroupId: string | null;
   targetStatus: "none" | "selected" | "unconfirmed" | "unavailable";
   mayManageBlocks: boolean;
+  mayManageGroups?: boolean;
   propertyId: string;
   propertyName: string;
   rooms: RoomInventory[];

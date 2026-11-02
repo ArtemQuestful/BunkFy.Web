@@ -427,13 +427,31 @@ export type ManualBlockListResponse = Omit<Schema<"ManualInventoryBlockListRespo
   blocks: ManualBlock[];
 };
 
-export type ManualBlockGroup = {
-  blockGroupId: string;
-  blocks: ManualBlock[];
-};
-
 export type ManualBlockMutationReceipt = Schema<"ManualInventoryBlockMutationReceiptDto">;
+export type ManualBlockGroupStatus = Schema<"ManualInventoryBlockGroupStatus">;
+export type ManualBlockGroupPreviewStatus = Schema<"ManualInventoryBlockGroupPreviewStatus">;
+export type ManualBlockGroupOperationKind = Schema<"ManualInventoryBlockGroupOperationKind">;
+export type ManualBlockGroupOperationStatus = Schema<"ManualInventoryBlockGroupOperationStatus">;
+export type ManualBlockGroup = Schema<"ManualInventoryBlockGroupDto">;
+export type ManualBlockGroupListResponse = Omit<
+  Schema<"ManualInventoryBlockGroupListResponse">,
+  "blockGroups"
+> & { blockGroups: ManualBlockGroup[] };
+export type ManualBlockGroupMemberListResponse = Omit<
+  Schema<"ManualInventoryBlockGroupMemberListResponse">,
+  "blocks"
+> & { blocks: ManualBlock[] };
+export type ManualBlockGroupPreviewMember = Schema<"ManualInventoryBlockGroupPreviewMemberDto">;
+export type ManualBlockGroupSelectionPreview = Omit<
+  Schema<"ManualInventoryBlockGroupSelectionPreviewDto">,
+  "members"
+> & { members: ManualBlockGroupPreviewMember[] };
 export type ManualBlockGroupMutationReceipt = Schema<"ManualInventoryBlockGroupMutationReceiptDto">;
+export type ManualBlockGroupOperation = Schema<"ManualInventoryBlockGroupOperationDto">;
+export type PreviewManualBlockGroupRequest = Schema<"PreviewManualBlockGroupRequest">;
+export type CreateManualBlockGroupRequest = Schema<"CreateManualBlockGroupRequest">;
+export type ReplaceManualBlockGroupRequest = Schema<"ReplaceManualBlockGroupRequest">;
+export type ReleaseManualBlockGroupRequest = Schema<"ReleaseManualBlockGroupRequest">;
 
 export type ReservationStatus = Schema<"ReservationStatus">
   | "pendingAllocation"

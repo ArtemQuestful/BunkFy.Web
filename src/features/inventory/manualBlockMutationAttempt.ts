@@ -11,6 +11,13 @@ export type ManualBlockCreateAttemptInput = {
   arrival: string;
   departure: string;
   reason: string;
+  expectedSelectionDigest?: string | null;
+  expectedAffectedBlockCount?: number | null;
+};
+
+export type ManualBlockReplaceAttemptInput = ManualBlockCreateAttemptInput & {
+  blockGroupId: string;
+  expectedVersion: number;
 };
 
 export function resolveManualBlockCreateAttempt(
@@ -25,6 +32,29 @@ export function resolveManualBlockCreateAttempt(
     arrival: input.arrival,
     departure: input.departure,
     reason: input.reason.trim(),
+    expectedSelectionDigest: input.expectedSelectionDigest?.trim().toLowerCase() || null,
+    expectedAffectedBlockCount: input.expectedAffectedBlockCount ?? null,
+  });
+
+  return resolveAttempt(current, fingerprint, createOperationId);
+}
+
+export function resolveManualBlockReplaceAttempt(
+  current: ManualBlockMutationAttempt | null,
+  input: ManualBlockReplaceAttemptInput,
+  createOperationId: () => string = () => crypto.randomUUID(),
+): ManualBlockMutationAttempt {
+  const fingerprint = JSON.stringify({
+    action: "manual-block-group-replace",
+    propertyId: normalizeId(input.propertyId),
+    blockGroupId: normalizeId(input.blockGroupId),
+    expectedVersion: input.expectedVersion,
+    target: normalizeTarget(input.target),
+    arrival: input.arrival,
+    departure: input.departure,
+    reason: input.reason.trim(),
+    expectedSelectionDigest: input.expectedSelectionDigest?.trim().toLowerCase() || null,
+    expectedAffectedBlockCount: input.expectedAffectedBlockCount ?? null,
   });
 
   return resolveAttempt(current, fingerprint, createOperationId);
@@ -34,15 +64,19 @@ export function resolveManualBlockGroupReleaseAttempt(
   current: ManualBlockMutationAttempt | null,
   propertyId: string,
   blockGroupId: string,
+  expectedVersionOrGenerator?: number | (() => string),
   createOperationId: () => string = () => crypto.randomUUID(),
 ): ManualBlockMutationAttempt {
+  const expectedVersion = typeof expectedVersionOrGenerator === "number" ? expectedVersionOrGenerator : undefined;
+  const generate = typeof expectedVersionOrGenerator === "function" ? expectedVersionOrGenerator : createOperationId;
   const fingerprint = JSON.stringify({
     action: "manual-block-group-release",
     propertyId: normalizeId(propertyId),
     blockGroupId: normalizeId(blockGroupId),
+    expectedVersion: expectedVersion ?? null,
   });
 
-  return resolveAttempt(current, fingerprint, createOperationId);
+  return resolveAttempt(current, fingerprint, generate);
 }
 
 function resolveAttempt(

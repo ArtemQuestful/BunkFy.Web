@@ -1,23 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   BedDouble,
-  Blocks,
   CalendarSearch,
   CheckCircle2,
   CircleSlash2,
   DoorOpen,
-  History,
   Plus,
   ShieldCheck,
-  Unlock,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import type {
-  ManualBlockGroup,
   RoomInventory,
 } from "../../api/types";
-import { manualBlockStatusLabel } from "../../api/labels";
 import {
   compositeSourceCurrent,
   compositeSourceUsable,
@@ -42,12 +37,10 @@ import {
 } from "../../components/ui/primitives";
 import { DatePicker } from "../../components/ui/DatePicker";
 import { CompositeSourceFallback, CompositeSourceNotice } from "../../components/ui/CompositeSourceNotice";
-import { SegmentedTabs } from "../../components/ui/SegmentedTabs";
 import { BlockInventoryModal } from "./BlockInventoryModal";
-import { BlockReleaseForm } from "./BlockReleaseForm";
 import { BlockMutationNotice } from "./BlockEditorFrame";
 import { useManualBlockEditor } from "./useManualBlockEditor";
-import { buildBlockTargetOptions, groupActiveBlocks } from "./inventoryBlocking";
+import { buildBlockTargetOptions } from "./inventoryBlocking";
 import {
   inventoryAvailabilityMatchesContext,
   loadAllManualInventoryBlocks,
@@ -59,6 +52,8 @@ import {
 import { sellableInventorySummary } from "./inventorySummary";
 import { SalesModeChangeModal, SalesModeNotice } from "./SalesModeChangeModal";
 import { useSalesModeEditor } from "./useSalesModeEditor";
+import { ManualBlockGroupDirectory } from "./ManualBlockGroupDirectory";
+import { sessionIdentityKey } from "../../app/singleFlightRefresh";
 import { OwnerOriginLink } from "../spaces/OwnerOriginLink";
 
 export function InventoryPage() {
@@ -76,7 +71,6 @@ export function InventoryPage() {
   useTargetProperty(hasRequestedProperty ? requestedPropertyId : null);
   const targetArrival = searchParams.get("arrival");
   const targetDeparture = searchParams.get("departure");
-  const blockView = searchParams.get("history") === "all" ? "all" : "active";
   const [range, setRange] = useState<StayDateRange>({ arrival: "", departure: "" });
   const accessScope = session && selectedPropertyId
     ? propertyAccessScope(session.tenantId, selectedPropertyId)
@@ -86,10 +80,12 @@ export function InventoryPage() {
     { permission: permissions.inventoryConfigure, scope: accessScope },
     { permission: permissions.reservationsRead, scope: accessScope },
     { permission: permissions.inventoryBlocksManage, scope: accessScope },
+    { permission: permissions.inventoryBlockGroupsManage, scope: accessScope },
   ] : []);
   const mayRead = access.allows(permissions.inventoryRead, accessScope);
   const canConfigure = access.allows(permissions.inventoryConfigure, accessScope);
   const canManageBlocks = access.allows(permissions.inventoryBlocksManage, accessScope);
+  const canManageGroups = access.allows(permissions.inventoryBlockGroupsManage, accessScope);
   const permissionSource = createCompositeSource({
     label: "Inventory permissions",
     hasData: access.hasData,
@@ -133,14 +129,15 @@ export function InventoryPage() {
     enabled: enabled && validStayDateRange(range),
   });
   const blocks = useQuery({
-    queryKey: ["blocks", selectedPropertyId, blockView],
+    queryKey: ["blocks", selectedPropertyId, "active", range.arrival, range.departure],
     queryFn: ({ signal }) => loadAllManualInventoryBlocks(
       request,
       selectedPropertyId!,
-      blockView === "all",
+      false,
       signal,
+      { from: range.arrival, to: range.departure },
     ),
-    enabled,
+    enabled: enabled && validStayDateRange(range),
   });
   const inventoryContextMismatch = Boolean(
     inventory.data && !roomInventoryMatchesProperty(inventory.data.rooms, selectedPropertyId),
@@ -208,19 +205,6 @@ export function InventoryPage() {
     () => buildBlockTargetOptions(selectedProperty?.name ?? "Property", rooms),
     [rooms, selectedProperty?.name],
   );
-  const activeBlockGroups = useMemo(
-    () => groupActiveBlocks(blocksUsable ? blocks.data?.blocks ?? [] : [], targetOptions),
-    [blocks.data, blocksUsable, targetOptions],
-  );
-  function setBlockView(value: "active" | "all") {
-    const next = new URLSearchParams(searchParams);
-    if (value === "all") next.set("history", "all");
-    else next.delete("history");
-    next.delete("focus");
-    next.delete("blockGroup");
-    setSearchParams(next, { replace: true });
-  }
-
   useEffect(() => {
     const targetedRange = targetArrival && targetDeparture
       ? { arrival: targetArrival, departure: targetDeparture }
@@ -257,6 +241,7 @@ export function InventoryPage() {
     rooms,
     blocks: blocks.data?.blocks ?? [],
     mayManage: mayRead && canManageBlocks,
+    mayManageGroups: mayRead && canManageGroups,
     evidence: { permissionsCurrent, propertyCurrent, inventoryCurrent, blocksCurrent },
     onSuccess: ({ action, receipt }) => setSearchParams((current) => {
       const next = new URLSearchParams(current);
@@ -314,7 +299,7 @@ export function InventoryPage() {
         eyebrow={selectedProperty.name}
         title="Inventory"
         description="Control how rooms are sold, check availability, and take physical areas out of service."
-        action={canManageBlocks ? (
+        action={canManageBlocks || canManageGroups ? (
           <button
             className="btn btn-primary"
             onClick={(event) => blockEditor.openCreate(event.currentTarget)}
@@ -353,69 +338,10 @@ export function InventoryPage() {
           onEdit={(room, trigger) => salesEditor.open(room, trigger, searchParams)}
         />
 
-        <section data-blocks-region className="card border border-base-300 bg-base-100 shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-base-300 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div>
-              <h2 className="font-display text-xl font-semibold">Inventory blocks</h2>
-              <p className="mt-1 text-sm text-base-content/50">Manual holds and release history.</p>
-            </div>
-            <SegmentedTabs
-              value={blockView}
-              ariaLabel="Inventory block view"
-              onValueChange={setBlockView}
-              options={[
-                { value: "active", label: "Unreleased", icon: <Blocks size={14} /> },
-                { value: "all", label: "All", icon: <History size={14} /> },
-              ]}
-            />
-          </div>
-          {!blocksUsable ? (
-            <CompositeSourceFallback state={blockSource.state} label="inventory blocks" />
-          ) : activeBlockGroups.length === 0 ? (
-            <div className="p-3 sm:p-4">
-              <EmptyState
-                icon={<Blocks />}
-                title={blockView === "active" ? "No unreleased blocks" : "No block history"}
-                description={blockView === "active" ? "Choose All to see released blocks." : "No manual holds have been recorded."}
-              />
-            </div>
-          ) : (
-            <div className="divide-y divide-base-300">
-              {activeBlockGroups.map((group) => (
-                <div key={group.blockGroupId} tabIndex={group.blockGroupId === focusedBlockGroupId ? -1 : undefined} className={`px-5 py-4 outline-none outline-offset-[-3px] focus:outline-2 focus:outline-primary sm:px-6 ${group.blockGroupId === focusedBlockGroupId ? focusedResourceClass : ""}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold">{group.label}</p>
-                      <p className="mt-1 text-xs text-base-content/45">
-                        {group.detail} - {formatDate(group.arrival)} to {formatDate(group.departure)}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {blockView === "all" && (
-                        <span className={`badge badge-sm ${blockStatus(group) === "released" ? "badge-ghost" : "badge-neutral"}`}>
-                          {blockStatus(group) === "active" ? "Unreleased" : capitalize(blockStatus(group))}
-                        </span>
-                      )}
-                    {canManageBlocks && blockStatus(group) === "active" && (
-                      <button
-                        className="btn btn-ghost btn-sm shrink-0 text-primary"
-                        onClick={(event) => blockEditor.openRelease(group.blockGroupId, group.label, group.detail, event.currentTarget)}
-                        disabled={!blockEditor.ready || blockEditor.busy || Boolean(blockEditor.editor)}
-                      >
-                        <Unlock size={15} />
-                        Release
-                      </button>
-                    )}
-                    </div>
-                  </div>
-                  <p className="mt-3 rounded-lg bg-base-200 px-3 py-2 text-xs text-base-content/60">{group.reason}</p>
-                  {blockEditor.editor?.kind === "release" && blockEditor.editor.target.blockGroupId === group.blockGroupId && <BlockReleaseForm editor={blockEditor} />}
-                </div>
-              ))}
-            </div>
-          )}
-          {blockEditor.releaseGroupId && !activeBlockGroups.some((group) => group.blockGroupId === blockEditor.releaseGroupId) && <BlockReleaseForm editor={blockEditor} />}
-        </section>
+        <ManualBlockGroupDirectory key={`${sessionIdentityKey(session)}:${selectedPropertyId}`}
+          propertyId={selectedPropertyId} propertyName={selectedProperty.name} propertyTimeZoneId={propertyTimeZoneId}
+          rooms={rooms} mayReadCurrent={mayReadCurrent} mayManage={canManageGroups}
+          sources={[permissionSource, propertySource, inventorySource, blockSource]} focusedBlockGroupId={focusedBlockGroupId} />
       </div>
 
       <BlockInventoryModal
@@ -605,17 +531,3 @@ function normalizeSalesMode(value: RoomInventory["salesMode"]): "unconfigured" |
   if (value === 3 || String(value).toLowerCase() === "bedlevel") return "bedLevel";
   return "unconfigured";
 }
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(`${value}T12:00:00`));
-}
-
-function blockStatus(group: { blocks: ManualBlockGroup["blocks"] }) {
-  return manualBlockStatusLabel(group.blocks[0]?.status ?? 0);
-}
-
-function capitalize(value: string) { return value.slice(0, 1).toUpperCase() + value.slice(1); }

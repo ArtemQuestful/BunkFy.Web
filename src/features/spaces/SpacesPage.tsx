@@ -145,6 +145,7 @@ function SpacesWorkspace({ navigation }: { navigation: SpacesNavigationGuard }) 
     { permission: permissions.inventoryConfigure, scope: propertyScope },
     { permission: permissions.reservationsRead, scope: propertyScope },
     { permission: permissions.inventoryBlocksManage, scope: propertyScope },
+    { permission: permissions.inventoryBlockGroupsManage, scope: propertyScope },
     { permission: permissions.inventoryRetire, scope: propertyScope },
   ] : []);
   const mayReadProperties = access.allows(permissions.propertiesRead, propertyScope);
@@ -155,7 +156,9 @@ function SpacesWorkspace({ navigation }: { navigation: SpacesNavigationGuard }) 
   const mayRetireInventory = access.allows(permissions.inventoryRetire, propertyScope);
   const mayReadInventory = access.allows(permissions.inventoryRead, propertyScope);
   const mayConfigureInventory = access.allows(permissions.inventoryConfigure, propertyScope);
-  const mayManageBlocks = access.allows(permissions.inventoryBlocksManage, propertyScope);
+  const mayManageIndividualBlocks = access.allows(permissions.inventoryBlocksManage, propertyScope);
+  const mayManageBlockGroups = access.allows(permissions.inventoryBlockGroupsManage, propertyScope);
+  const mayManageBlocks = mayManageIndividualBlocks || mayManageBlockGroups;
   const permissionSource = createCompositeSource({
     label: "Spaces permissions",
     hasData: access.hasData,
@@ -544,7 +547,7 @@ function SpacesWorkspace({ navigation }: { navigation: SpacesNavigationGuard }) 
     propertyId: targetPropertyId, propertyName: targetProperty?.name ?? "Property",
     selectionKey: [requestedRoomId, requestedBedId, requestedUnitId, availabilityRange.arrival, availabilityRange.departure].join("|"),
     rooms: salesRooms, blocks: compositeSourceUsable(blockSource.state) ? blocksQuery.data?.blocks ?? [] : [],
-    mayManage: mayManageBlocks,
+    mayManage: mayManageIndividualBlocks, mayManageGroups: mayManageBlockGroups,
     evidence: { permissionsCurrent: permissionCurrent, propertyCurrent: propertyDirectoryCurrent, inventoryCurrent, blocksCurrent: blockEvidenceCurrent },
     onSuccess: (notice) => setSearchParams((current) => spacesBlockSuccessParams(current, notice)),
   });

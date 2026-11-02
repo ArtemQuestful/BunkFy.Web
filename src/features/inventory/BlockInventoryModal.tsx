@@ -11,6 +11,7 @@ import { BlockEditorFrame } from "./BlockEditorFrame";
 import { selectedBlockTargetCurrent } from "./blockEditorModel";
 import type { BlockTargetKind, BlockTargetOption } from "./inventoryBlocking";
 import type { useManualBlockEditor } from "./useManualBlockEditor";
+import { presentManualBlockGroupPreview } from "./manualBlockGroupWorkflow";
 
 const targetKinds = [
   { kind: "property", label: "Property", icon: MapPinned },
@@ -58,10 +59,14 @@ function BlockInventoryForm({ editor, initialRange, initialTargetId, sources, in
   const currentSelected = selectedCurrent ? options.find((option) => option.id === selected?.id) : undefined;
   const selectedVisible = visibleOptions.some((option) => option.id === selected?.id);
   const rangeValid = validStayDateRange({ arrival, departure });
-  const needsAuthentication = isInsufficientAuthenticationError(mutation.error);
+  const error = mutation.error ?? editor.previewMutation?.error;
+  const needsAuthentication = isInsufficientAuthenticationError(error);
   // Refresh withholds submission, not the live controls or their popovers.
-  const locked = mutation.isPending || Boolean(mutation.error);
+  const locked = editor.busy || Boolean(mutation.error);
   const canSubmit = editor.createCanSubmit(selected) && selectedVisible && rangeValid && !(!reason.trim() && reason.length > 0);
+  const payload = selected ? { target: selected.target, arrival, departure, reason } : null;
+  const previewCurrent = Boolean(editor.mayManageGroups && payload && editor.reviewMatches(payload, selected));
+  const preview = previewCurrent && editor.createReview ? presentManualBlockGroupPreview(editor.createReview.preview) : null;
 
   function chooseKind(kind: BlockTargetKind) {
     setTargetKind(kind); setSearch("");
@@ -80,11 +85,12 @@ function BlockInventoryForm({ editor, initialRange, initialTargetId, sources, in
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSubmit || !selected || !reason.trim() || locked) return;
-    editor.create({ target: selected.target, arrival, departure, reason }, selected);
+    if (editor.mayManageGroups && previewCurrent && preview?.canConfirm) editor.confirmCreate({ target: selected.target, arrival, departure, reason }, selected);
+    else editor.create({ target: selected.target, arrival, departure, reason }, selected);
   }
 
   return <BlockEditorFrame inline={inline} title="Add block" description="Take a room, bed or area out of service."
-    onClose={editor.close} opener={editor.opener} feedback={mutation.error}>
+    onClose={editor.close} opener={editor.opener} feedback={error ?? (previewCurrent ? editor.createReview : null)}>
     <CompositeSourceNotice className="mb-3" sources={sources} title="Block information is refreshing or unavailable" />
     {!editor.ready && !mutation.isPending && <p role="status" className="mb-3 text-sm text-warning-content">Your draft is kept. Current access, inventory and block records are required to submit.</p>}
     <form onSubmit={submit} className="space-y-4" hidden={needsAuthentication}>
@@ -99,7 +105,7 @@ function BlockInventoryForm({ editor, initialRange, initialTargetId, sources, in
             aria-expanded={choosingTarget} aria-controls={targetChooserId} onClick={changeTarget}>Change target</button>}
         </div>
         <p className="mt-1 break-words text-sm text-base-content/65">{currentSelected?.detail ?? selected.detail}</p>
-        <p className="mt-1 text-xs text-base-content/65">{selected.unitIds.length} {selected.unitIds.length === 1 ? "unit" : "units"}{editor.ready && selectedCurrent ? " will be blocked." : " in the last selected scope; confirm current records before submitting."}</p>
+        <p className="mt-1 text-xs text-base-content/65">{selected.unitIds.length} {selected.unitIds.length === 1 ? "unit" : "units"}{editor.mayManageGroups ? " in the local selection. Preview confirms the current server selection before you act." : editor.ready && selectedCurrent ? " will be blocked." : " in the last selected scope; confirm current records before submitting."}</p>
       </div>}
       <div ref={targetChooser} id={targetChooserId} hidden={!choosingTarget} className="space-y-4">
       <fieldset disabled={locked}>
@@ -146,6 +152,12 @@ function BlockInventoryForm({ editor, initialRange, initialTargetId, sources, in
           placeholder="Maintenance, private use, deep clean…" required disabled={locked} />
       </label>
       {reason.length > 0 && !reason.trim() && <p role="alert" className="text-sm text-error">Enter a reason, not only spaces.</p>}
+      {preview && <section role="status" data-block-preview data-feedback-focus className="rounded-lg border border-base-300 bg-base-200 p-4 text-sm">
+        <h4 className="font-semibold">{preview.title}</h4><p className="mt-1">{preview.description}</p>
+        <p className="mt-2 font-semibold">{preview.impactLabel}</p>
+        {preview.canConfirm && <p className="mt-2">Confirm this exact target, dates, reason and server selection. Changes require another preview.</p>}
+      </section>}
+      {editor.previewMutation?.error && !mutation.error && !needsAuthentication && <ErrorState error={editor.previewMutation?.error} title="Couldn't preview the block" />}
       {mutation.error && !needsAuthentication && <><ErrorState error={mutation.error} title="Couldn't add the block" retry={canSubmit ? editor.retryCreate : undefined} />
         <p className="text-xs text-base-content/60">Try again repeats this exact attempt. Check refreshed records before starting a different block if the outcome is uncertain.</p>
         <button type="button" className="btn btn-ghost btn-sm" disabled={mutation.isPending} onClick={() => {
@@ -153,10 +165,13 @@ function BlockInventoryForm({ editor, initialRange, initialTargetId, sources, in
           requestAnimationFrame(() => reasonInput.current?.focus());
         }}>Edit draft</button>
       </>}
-      {!needsAuthentication && <FormActions submitting={mutation.isPending} cancelDisabled={mutation.isPending} disabled={!canSubmit || Boolean(mutation.error)}
-        submitLabel={selected && selected.unitIds.length > 1 ? `Block ${selected.unitIds.length} units` : "Add block"} onCancel={editor.close} />}
+      {!needsAuthentication && <FormActions submitting={editor.busy} cancelDisabled={editor.busy} disabled={!canSubmit || Boolean(mutation.error) || Boolean(preview && !preview.canConfirm)}
+        submitLabel={editor.mayManageGroups ? preview?.canConfirm ? "Confirm block" : "Preview block" : selected && selected.unitIds.length > 1 ? `Block ${selected.unitIds.length} units` : "Add block"} onCancel={editor.close} />}
     </form>
-    {needsAuthentication && <div className="space-y-3"><RecentAuthenticationPrompt error={mutation.error} onAuthenticated={editor.retryCreate} />
+    {needsAuthentication && <div className="space-y-3"><RecentAuthenticationPrompt error={error} onAuthenticated={() => {
+      if (mutation.error) editor.retryCreate();
+      else if (payload && selected) editor.create(payload, selected);
+    }} />
       <button type="button" className="btn btn-ghost btn-sm" onClick={editor.close}>Cancel</button></div>}
   </BlockEditorFrame>;
 }

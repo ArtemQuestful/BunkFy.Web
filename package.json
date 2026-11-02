@@ -16,7 +16,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --maxWorkers=2",
+    "test": "vitest run",
     "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
   },
   "devDependencies": {

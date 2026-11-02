@@ -6,6 +6,8 @@ import { blockTargetIsCurrent } from "./inventoryMutationAuthority";
 
 export type BlockEditorScope = { contextKey: string; editorSession: number; propertyId: string };
 export type CreateBlockPayload = { target: BlockTargetOption["target"]; arrival: string; departure: string; reason: string };
+export type BlockMutationReceipt = Pick<ManualBlockGroupMutationReceipt,
+  "propertyId" | "blockGroupId" | "affectedBlockCount">;
 export type BlockReleaseTarget = {
   blockGroupId: string;
   label: string;
@@ -31,7 +33,7 @@ export function validCreateBlockPayload(payload: CreateBlockPayload) {
   return validStayDateRange(payload) && payload.reason.trim().length > 0;
 }
 
-export function validCreateBlockReceipt(receipt: unknown, propertyId: string): receipt is ManualBlockGroupMutationReceipt {
+export function validCreateBlockReceipt(receipt: unknown, propertyId: string): receipt is BlockMutationReceipt {
   if (!receipt || typeof receipt !== "object") return false;
   const candidate = receipt as Partial<ManualBlockGroupMutationReceipt>;
   // Backend contract: non-empty Guid group ID and signed int32 affected row count.
