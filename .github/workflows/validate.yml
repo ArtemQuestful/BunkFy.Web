@@ -54,6 +54,15 @@ jobs:
       - name: Verify
         run: pnpm verify
 
+      - name: Record Windows socket and memory state
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_OperatingSystem |
+            Select-Object TotalVisibleMemorySize, FreePhysicalMemory
+          Get-NetTCPConnection | Group-Object State | Select-Object Name, Count
+          netsh int ipv4 show dynamicport tcp
+
   validate:
     needs: verify
     if: always()
