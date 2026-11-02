@@ -132,13 +132,15 @@ describe("shared editor source wiring (runtime review remains required)", () => 
   const source = (path: string) => readFileSync(new URL(`../src/features/${path}`, import.meta.url), "utf8");
   it("keeps both block requests in one controller used by both routes", () => {
     const controller = source("inventory/useManualBlockEditor.ts");
-    expect(controller.match(/request<ManualBlockGroupMutationReceipt>/g)).toHaveLength(2);
+    expect(controller.match(/request<ManualBlockMutationReceipt>/g)).toHaveLength(2);
+    expect(controller).toContain("createManualBlockGroup(request,");
+    expect(controller).toContain("releaseManualBlockGroup(request,");
     for (const path of ["inventory/InventoryPage.tsx", "spaces/SpacesBlocksSection.tsx"]) {
       const page = source(path);
       expect(page).toContain("useManualBlockEditor(");
       expect(page).not.toContain("request<ManualBlockGroupMutationReceipt>");
       expect(page).toContain("<BlockMutationNotice");
-      expect(page).toContain("<BlockReleaseForm");
+      expect(page).toContain(path.startsWith("spaces/") ? "<BlockReleaseForm" : "<ManualBlockGroupDirectory");
     }
     expect(controller).toContain("blockEditorScopeCurrent(candidate, scope())");
     expect(controller).toContain("if (!scopeCurrent(candidate)) return;");
@@ -157,7 +159,7 @@ describe("shared editor source wiring (runtime review remains required)", () => 
     expect(form).toContain("Enter a reason, not only spaces");
     expect(form).toContain("selected && !selectedCurrent");
     expect(form).toContain("selectedVisible && rangeValid");
-    expect(form).toContain("const locked = mutation.isPending || Boolean(mutation.error)");
+    expect(form).toContain("const locked = editor.busy || Boolean(mutation.error)");
     expect(source("inventory/BlockEditorFrame.tsx")).toContain("useCallback(() => closeRef.current(), [])");
   });
   it("retains the exact confirmation when its row disappears and keeps history contract values", () => {
@@ -166,11 +168,12 @@ describe("shared editor source wiring (runtime review remains required)", () => 
     expect(spaces).toContain('{ value: "active", label: scope === "selected" ? "Selected dates" : "Unreleased"');
     expect(spaces).not.toContain("Review release");
     expect(spaces).not.toContain("Manage blocks");
-    const legacy = source("inventory/InventoryPage.tsx");
-    expect(legacy).toContain("blockEditor.releaseGroupId && !activeBlockGroups.some");
-    expect(legacy).toContain('{ value: "active", label: "Unreleased"');
-    expect(legacy).toContain('"No unreleased blocks"');
-    expect(legacy).not.toContain('label: "Active"');
+    const directory = source("inventory/ManualBlockGroupDirectory.tsx");
+    expect(directory).toContain("release && <ReleaseManualBlockGroupModal");
+    expect(directory).toContain('{ value: "active", label: "Active"');
+    expect(directory).toContain('{ value: "partial", label: "Partial"');
+    expect(directory).toContain('{ value: "all", label: "All"');
+    expect(directory).toContain("Check Partial for groups that still have some active members");
   });
   it("lets the open inline creation form own source recovery without hiding stale row labels", () => {
     const spaces = source("spaces/SpacesBlocksSection.tsx");

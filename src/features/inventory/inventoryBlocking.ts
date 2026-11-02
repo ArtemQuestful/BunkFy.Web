@@ -117,6 +117,26 @@ export function buildBlockTargetOptions(
     targetOrder(left.kind) - targetOrder(right.kind) || left.label.localeCompare(right.label));
 }
 
+export function findBlockTargetOption(
+  options: BlockTargetOption[],
+  target: InventoryBlockTarget | null | undefined,
+): BlockTargetOption | null {
+  if (!target) return null;
+  return options.find((option) => blockTargetsEqual(option.target, target)) ?? null;
+}
+
+export function blockTargetsEqual(left: InventoryBlockTarget, right: InventoryBlockTarget): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === 2) return normalizeNullable(left.buildingLabel) === normalizeNullable(right.buildingLabel);
+  if (left.kind === 3) {
+    return normalizeNullable(left.buildingLabel) === normalizeNullable(right.buildingLabel) &&
+      normalizeNullable(left.floorLabel) === normalizeNullable(right.floorLabel);
+  }
+  if (left.kind === 4) return normalizeNullable(left.roomId) === normalizeNullable(right.roomId);
+  if (left.kind === 5) return normalizeNullable(left.inventoryUnitId) === normalizeNullable(right.inventoryUnitId);
+  return left.kind === 1;
+}
+
 export function groupActiveBlocks(
   blocks: ManualBlock[],
   targetOptions: BlockTargetOption[],
@@ -206,6 +226,10 @@ function unitKindLabel(kind: RoomInventory["units"][number]["kind"]): string {
 
 function normalize(value: string): string {
   return value.trim().toLocaleLowerCase();
+}
+
+function normalizeNullable(value: string | null): string {
+  return value?.trim().toLocaleLowerCase() ?? "";
 }
 
 function targetOrder(kind: BlockTargetKind): number {

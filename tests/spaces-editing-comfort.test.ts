@@ -295,6 +295,7 @@ describe("Spaces editing comfort — rendered composition, not browser acceptanc
   });
   it("keeps history readable without block-management actions and distinguishes all from selected scope", () => {
     state.grants.delete(permissions.inventoryBlocksManage);
+    state.grants.delete(permissions.inventoryBlockGroupsManage);
     const selected = render(route("&history=all"));
     expect(selected).toContain("Exact selected hold reason"); expect(selected).not.toContain("Different space hold reason");
     expect(button(selected, "Add block")).toBeUndefined(); expect(button(selected, "Release")).toBeUndefined();

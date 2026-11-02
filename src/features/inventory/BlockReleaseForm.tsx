@@ -23,6 +23,8 @@ export function BlockReleaseForm({ editor }: { editor: ReturnType<typeof useManu
       <div><dt className="font-semibold">Reason</dt>{target.reasons.map((reason) => <dd key={reason} className="mt-1 break-words">{reason}</dd>)}</div>
     </dl>
     <p className="mt-3 text-sm">This removes the hold from {target.unitCount} {target.unitCount === 1 ? "unit" : "units"}. Inventory may become available for reservations if otherwise eligible.</p>
+    {editor.mayManageGroups && editor.releaseGroup.isFetching && <p role="status" className="mt-3 text-sm">Checking the current block-group version…</p>}
+    {editor.releaseGroup?.error && <div className="mt-3"><ErrorState error={editor.releaseGroup.error} title="Couldn't confirm the block-group version" retry={() => void editor.releaseGroup.refetch()} /></div>}
     {!editor.releaseCanSubmit && !mutation.isPending && <div role="status" data-feedback-focus className="mt-3 border-l-2 border-warning px-3 py-2 text-sm">
       <p>{editor.releaseTargetCurrent ? "Current access and inventory are required. This exact confirmation is kept while information refreshes." : "This exact group changed, was released, or is no longer in the current view. Refresh or check All; cancel and review it again before acting."}</p>
       <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => void editor.refresh()}>Refresh blocks</button>

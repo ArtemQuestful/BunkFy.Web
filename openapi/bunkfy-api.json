@@ -7207,7 +7207,97 @@
         }
       }
     },
+    "/api/inventory/properties/{propertyId}/block-groups/preview": {
+      "post": {
+        "tags": [
+          "Inventory"
+        ],
+        "parameters": [
+          {
+            "name": "propertyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewManualBlockGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualInventoryBlockGroupSelectionPreviewDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/inventory/properties/{propertyId}/block-groups": {
+      "get": {
+        "tags": [
+          "Inventory"
+        ],
+        "parameters": [
+          {
+            "name": "propertyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ManualInventoryBlockGroupStatus"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualInventoryBlockGroupListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "Inventory"
@@ -7240,6 +7330,153 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ManualInventoryBlockGroupMutationReceiptDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/properties/{propertyId}/block-groups/{blockGroupId}": {
+      "get": {
+        "tags": [
+          "Inventory"
+        ],
+        "parameters": [
+          {
+            "name": "propertyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "blockGroupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualInventoryBlockGroupDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Inventory"
+        ],
+        "parameters": [
+          {
+            "name": "propertyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "blockGroupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceManualBlockGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualInventoryBlockGroupMutationReceiptDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/properties/{propertyId}/block-groups/{blockGroupId}/members": {
+      "get": {
+        "tags": [
+          "Inventory"
+        ],
+        "parameters": [
+          {
+            "name": "propertyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "blockGroupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ManualInventoryBlockStatus"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualInventoryBlockGroupMemberListResponse"
                 }
               }
             }
@@ -7338,6 +7575,93 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ManualInventoryBlockGroupMutationReceiptDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/properties/{propertyId}/block-group-create-operations/{operationId}": {
+      "get": {
+        "tags": [
+          "Inventory"
+        ],
+        "parameters": [
+          {
+            "name": "propertyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualInventoryBlockGroupOperationDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/properties/{propertyId}/block-groups/{blockGroupId}/operations/{operationId}": {
+      "get": {
+        "tags": [
+          "Inventory"
+        ],
+        "parameters": [
+          {
+            "name": "propertyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "blockGroupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualInventoryBlockGroupOperationDto"
                 }
               }
             }
@@ -16985,6 +17309,17 @@
           "reason": {
             "type": "string",
             "nullable": true
+          },
+          "expectedSelectionDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedAffectedBlockCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "confirmed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -20053,6 +20388,136 @@
         },
         "additionalProperties": false
       },
+      "ManualInventoryBlockGroupDto": {
+        "type": "object",
+        "properties": {
+          "blockGroupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "propertyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target": {
+            "$ref": "#/components/schemas/InventoryBlockTarget"
+          },
+          "arrival": {
+            "type": "string",
+            "format": "date"
+          },
+          "departure": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "selectionDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "membershipDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "membershipDigestVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "initialBlockCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "activeBlockCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ManualInventoryBlockGroupStatus"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "replacesGroupId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "replacedByGroupId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "releasedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdByActorId": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastModifiedByActorId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManualInventoryBlockGroupListResponse": {
+        "type": "object",
+        "properties": {
+          "blockGroups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualInventoryBlockGroupDto"
+            },
+            "nullable": true
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManualInventoryBlockGroupMemberListResponse": {
+        "type": "object",
+        "properties": {
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualInventoryBlockDto"
+            },
+            "nullable": true
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "ManualInventoryBlockGroupMutationReceiptDto": {
         "type": "object",
         "properties": {
@@ -20067,9 +20532,243 @@
           "affectedBlockCount": {
             "type": "integer",
             "format": "int32"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ManualInventoryBlockGroupStatus"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "previousBlockGroupId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "releasedBlockCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "createdBlockCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "totalBlockCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "activeBlockCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "alreadyReleasedBlockCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "membershipDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "resultBlockGroupId": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "releasedNowBlockCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "createdNowBlockCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
           }
         },
         "additionalProperties": false
+      },
+      "ManualInventoryBlockGroupOperationDto": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "propertyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestedBlockGroupId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ManualInventoryBlockGroupOperationKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ManualInventoryBlockGroupOperationStatus"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/ManualInventoryBlockGroupMutationReceiptDto"
+          },
+          "completedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManualInventoryBlockGroupOperationKind": {
+        "enum": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "ManualInventoryBlockGroupOperationStatus": {
+        "enum": [
+          0,
+          1
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "ManualInventoryBlockGroupPreviewMemberDto": {
+        "type": "object",
+        "properties": {
+          "inventoryUnitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "roomId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "roomName": {
+            "type": "string",
+            "nullable": true
+          },
+          "unitLabel": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManualInventoryBlockGroupPreviewStatus": {
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "ManualInventoryBlockGroupSelectionPreviewDto": {
+        "type": "object",
+        "properties": {
+          "propertyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target": {
+            "$ref": "#/components/schemas/InventoryBlockTarget"
+          },
+          "arrival": {
+            "type": "string",
+            "format": "date"
+          },
+          "departure": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ManualInventoryBlockGroupPreviewStatus"
+          },
+          "maximumAffectedBlockCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "affectedBlockCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "atLeastAffectedBlockCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "exceedsMaximumAffectedBlockCount": {
+            "type": "boolean"
+          },
+          "selectionDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "membershipDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "membershipDigestVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasManualBlockConflict": {
+            "type": "boolean"
+          },
+          "hasActiveAllocationConflict": {
+            "type": "boolean"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualInventoryBlockGroupPreviewMemberDto"
+            },
+            "nullable": true
+          },
+          "hasMoreMembers": {
+            "type": "boolean"
+          },
+          "blockGroupId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "blockGroupVersion": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "isNoOpReplacement": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManualInventoryBlockGroupStatus": {
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "type": "integer",
+        "format": "int32"
       },
       "ManualInventoryBlockListResponse": {
         "type": "object",
@@ -21390,6 +22089,37 @@
         },
         "additionalProperties": false
       },
+      "PreviewManualBlockGroupRequest": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/InventoryBlockTarget"
+          },
+          "arrival": {
+            "type": "string",
+            "format": "date"
+          },
+          "departure": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockGroupId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "PreviewOrganizationEnrollmentLinkRequest": {
         "type": "object",
         "properties": {
@@ -22180,6 +22910,13 @@
           "operationId": {
             "type": "string",
             "format": "uuid"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "confirmed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -22472,6 +23209,46 @@
           "refreshToken": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReplaceManualBlockGroupRequest": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "target": {
+            "$ref": "#/components/schemas/InventoryBlockTarget"
+          },
+          "arrival": {
+            "type": "string",
+            "format": "date"
+          },
+          "departure": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedSelectionDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedAffectedBlockCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "confirmed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

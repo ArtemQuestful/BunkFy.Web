@@ -6353,7 +6353,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inventory/properties/{propertyId}/block-groups": {
+    "/api/inventory/properties/{propertyId}/block-groups/preview": {
         parameters: {
             query?: never;
             header?: never;
@@ -6361,6 +6361,72 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    propertyId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PreviewManualBlockGroupRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ManualInventoryBlockGroupSelectionPreviewDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inventory/properties/{propertyId}/block-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    status?: components["schemas"]["ManualInventoryBlockGroupStatus"];
+                    cursor?: string;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    propertyId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ManualInventoryBlockGroupListResponse"];
+                    };
+                };
+            };
+        };
         put?: never;
         post: {
             parameters: {
@@ -6388,6 +6454,112 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inventory/properties/{propertyId}/block-groups/{blockGroupId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    propertyId: string;
+                    blockGroupId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ManualInventoryBlockGroupDto"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    propertyId: string;
+                    blockGroupId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReplaceManualBlockGroupRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ManualInventoryBlockGroupMutationReceiptDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inventory/properties/{propertyId}/block-groups/{blockGroupId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    status?: components["schemas"]["ManualInventoryBlockStatus"];
+                    cursor?: string;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    propertyId: string;
+                    blockGroupId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ManualInventoryBlockGroupMemberListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6472,6 +6644,83 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inventory/properties/{propertyId}/block-group-create-operations/{operationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    propertyId: string;
+                    operationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ManualInventoryBlockGroupOperationDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inventory/properties/{propertyId}/block-groups/{blockGroupId}/operations/{operationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    propertyId: string;
+                    blockGroupId: string;
+                    operationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ManualInventoryBlockGroupOperationDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -12937,6 +13186,10 @@ export interface components {
             /** Format: date */
             departure: string;
             reason: string | null;
+            expectedSelectionDigest: string | null;
+            /** Format: int32 */
+            expectedAffectedBlockCount: number;
+            confirmed: boolean;
         };
         CreateManualBlockRequest: {
             /** Format: uuid */
@@ -14087,6 +14340,53 @@ export interface components {
             /** Format: date-time */
             releasedAtUtc: string | null;
         };
+        ManualInventoryBlockGroupDto: {
+            /** Format: uuid */
+            blockGroupId: string;
+            /** Format: uuid */
+            propertyId: string;
+            target: components["schemas"]["InventoryBlockTarget"];
+            /** Format: date */
+            arrival: string;
+            /** Format: date */
+            departure: string;
+            reason: string | null;
+            selectionDigest: string | null;
+            membershipDigest: string | null;
+            /** Format: int32 */
+            membershipDigestVersion: number;
+            /** Format: int32 */
+            initialBlockCount: number;
+            /** Format: int32 */
+            activeBlockCount: number;
+            status: components["schemas"]["ManualInventoryBlockGroupStatus"];
+            /** Format: int64 */
+            version: number;
+            /** Format: uuid */
+            replacesGroupId: string | null;
+            /** Format: uuid */
+            replacedByGroupId: string | null;
+            /** Format: date-time */
+            createdAtUtc: string;
+            /** Format: date-time */
+            updatedAtUtc: string | null;
+            /** Format: date-time */
+            releasedAtUtc: string | null;
+            createdByActorId: string | null;
+            lastModifiedByActorId: string | null;
+        };
+        ManualInventoryBlockGroupListResponse: {
+            blockGroups: components["schemas"]["ManualInventoryBlockGroupDto"][] | null;
+            /** Format: int32 */
+            pageSize: number;
+            nextCursor: string | null;
+        };
+        ManualInventoryBlockGroupMemberListResponse: {
+            blocks: components["schemas"]["ManualInventoryBlockDto"][] | null;
+            nextCursor: string | null;
+            /** Format: int32 */
+            pageSize: number;
+        };
         ManualInventoryBlockGroupMutationReceiptDto: {
             /** Format: uuid */
             blockGroupId: string;
@@ -14094,7 +14394,100 @@ export interface components {
             propertyId: string;
             /** Format: int32 */
             affectedBlockCount: number;
+            status: components["schemas"]["ManualInventoryBlockGroupStatus"];
+            /** Format: int64 */
+            version: number | null;
+            /** Format: uuid */
+            previousBlockGroupId: string | null;
+            /** Format: int32 */
+            releasedBlockCount: number | null;
+            /** Format: int32 */
+            createdBlockCount: number | null;
+            /** Format: int32 */
+            totalBlockCount: number | null;
+            /** Format: int32 */
+            activeBlockCount: number | null;
+            /** Format: int32 */
+            alreadyReleasedBlockCount: number | null;
+            membershipDigest: string | null;
+            /** Format: uuid */
+            readonly resultBlockGroupId: string;
+            /** Format: int32 */
+            readonly releasedNowBlockCount: number | null;
+            /** Format: int32 */
+            readonly createdNowBlockCount: number | null;
         };
+        ManualInventoryBlockGroupOperationDto: {
+            /** Format: uuid */
+            operationId: string;
+            /** Format: uuid */
+            propertyId: string;
+            /** Format: uuid */
+            requestedBlockGroupId: string | null;
+            kind: components["schemas"]["ManualInventoryBlockGroupOperationKind"];
+            status: components["schemas"]["ManualInventoryBlockGroupOperationStatus"];
+            receipt: components["schemas"]["ManualInventoryBlockGroupMutationReceiptDto"];
+            /** Format: date-time */
+            completedAtUtc: string;
+        };
+        /**
+         * Format: int32
+         * @enum {integer}
+         */
+        ManualInventoryBlockGroupOperationKind: 0 | 1 | 2 | 3;
+        /**
+         * Format: int32
+         * @enum {integer}
+         */
+        ManualInventoryBlockGroupOperationStatus: 0 | 1;
+        ManualInventoryBlockGroupPreviewMemberDto: {
+            /** Format: uuid */
+            inventoryUnitId: string;
+            /** Format: uuid */
+            roomId: string;
+            roomName: string | null;
+            unitLabel: string | null;
+        };
+        /**
+         * Format: int32
+         * @enum {integer}
+         */
+        ManualInventoryBlockGroupPreviewStatus: 0 | 1 | 2 | 3 | 4;
+        ManualInventoryBlockGroupSelectionPreviewDto: {
+            /** Format: uuid */
+            propertyId: string;
+            target: components["schemas"]["InventoryBlockTarget"];
+            /** Format: date */
+            arrival: string;
+            /** Format: date */
+            departure: string;
+            status: components["schemas"]["ManualInventoryBlockGroupPreviewStatus"];
+            /** Format: int32 */
+            maximumAffectedBlockCount: number;
+            /** Format: int32 */
+            affectedBlockCount: number | null;
+            /** Format: int32 */
+            atLeastAffectedBlockCount: number;
+            exceedsMaximumAffectedBlockCount: boolean;
+            selectionDigest: string | null;
+            membershipDigest: string | null;
+            /** Format: int32 */
+            membershipDigestVersion: number;
+            hasManualBlockConflict: boolean;
+            hasActiveAllocationConflict: boolean;
+            members: components["schemas"]["ManualInventoryBlockGroupPreviewMemberDto"][] | null;
+            hasMoreMembers: boolean;
+            /** Format: uuid */
+            blockGroupId: string | null;
+            /** Format: int64 */
+            blockGroupVersion: number | null;
+            isNoOpReplacement: boolean;
+        };
+        /**
+         * Format: int32
+         * @enum {integer}
+         */
+        ManualInventoryBlockGroupStatus: 0 | 1 | 2 | 3 | 4;
         ManualInventoryBlockListResponse: {
             blocks: components["schemas"]["ManualInventoryBlockDto"][] | null;
             /** Format: int32 */
@@ -14577,6 +14970,18 @@ export interface components {
             expectedStaffVersion: number;
             reasonCode: string | null;
         };
+        PreviewManualBlockGroupRequest: {
+            target: components["schemas"]["InventoryBlockTarget"];
+            /** Format: date */
+            arrival: string;
+            /** Format: date */
+            departure: string;
+            reason: string | null;
+            /** Format: uuid */
+            blockGroupId: string | null;
+            /** Format: int64 */
+            expectedVersion: number | null;
+        };
         PreviewOrganizationEnrollmentLinkRequest: {
             token: string | null;
         };
@@ -14850,6 +15255,9 @@ export interface components {
         ReleaseManualBlockGroupRequest: {
             /** Format: uuid */
             operationId: string;
+            /** Format: int64 */
+            expectedVersion: number;
+            confirmed: boolean;
         };
         ReleaseManualBlockRequest: {
             /** Format: uuid */
@@ -14944,6 +15352,22 @@ export interface components {
         RemovePasswordRequest: {
             currentPassword: string | null;
             refreshToken: string | null;
+        };
+        ReplaceManualBlockGroupRequest: {
+            /** Format: uuid */
+            operationId: string;
+            /** Format: int64 */
+            expectedVersion: number;
+            target: components["schemas"]["InventoryBlockTarget"];
+            /** Format: date */
+            arrival: string;
+            /** Format: date */
+            departure: string;
+            reason: string | null;
+            expectedSelectionDigest: string | null;
+            /** Format: int32 */
+            expectedAffectedBlockCount: number;
+            confirmed: boolean;
         };
         ReplaceWorkspaceJoinSourceRequest: {
             /** Format: uuid */
