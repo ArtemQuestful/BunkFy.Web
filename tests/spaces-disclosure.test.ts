@@ -624,7 +624,8 @@ describe("Spaces single mounted selected-context disclosure", () => {
       await page.getByRole("button", { name: "Back to rooms & beds" }).click();
       await page.getByRole("button", { name: /^Dorm 102/ }).click();
       await page.getByRole("heading", { name: "Dorm 102", exact: true }).waitFor();
-      expect(await page.getByRole("heading", { name: "Dorm 102", exact: true }).evaluate(el => el === document.activeElement)).toBe(true);
+      // Selection hands focus off in requestAnimationFrame after mounting.
+      await expect.poll(() => page.getByRole("heading", { name: "Dorm 102", exact: true }).evaluate(el => el === document.activeElement)).toBe(true);
       expect(await toggle(page).getAttribute("aria-expanded")).toBe("false");
       expect(await page.locator(".spaces-room-toolbar input[type=search]").count()).toBe(1);
     } finally { await page.close(); }
@@ -647,7 +648,8 @@ describe("Spaces single mounted selected-context disclosure", () => {
         expect(await page.getByRole("textbox", { name: "Arrival date year", exact: true }).inputValue()).toBe("2027");
         await page.keyboard.press("Escape");
         await page.keyboard.press("Escape");
-        expect(await arrival(page).evaluate(el => el === document.activeElement)).toBe(true);
+        // Radix restores trigger focus asynchronously when the portal closes.
+        await expect.poll(() => arrival(page).evaluate(el => el === document.activeElement)).toBe(true);
       }
       await page.getByRole("heading", { name: "Dorm 101", exact: true }).focus();
       expect(await toggle(page).getAttribute("aria-expanded")).toBe("false");
@@ -818,7 +820,7 @@ describe("Spaces single mounted selected-context disclosure", () => {
       expect(await retry.evaluate(el => el === document.activeElement)).toBe(true);
       await retry.press(key); await retry.waitFor({state:"detached"});
       await page.evaluate(() => (window as unknown as {spacesHarness:{settle:(mode:string)=>void}}).spacesHarness.settle("ready"));
-      expect(await page.getByRole("heading",{name:"Dorm 101",exact:true}).evaluate(el => el === document.activeElement)).toBe(true);
+      await expect.poll(() => page.getByRole("heading",{name:"Dorm 101",exact:true}).evaluate(el => el === document.activeElement)).toBe(true);
       expect(await page.getByRole("status",{name:"Retry requests"}).textContent()).toBe("2");
     } finally { await page.close(); }
   },30000);

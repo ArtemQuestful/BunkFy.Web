@@ -126,7 +126,9 @@ describe("Today Rooms mounted responsive controls and row continuity", () => {
       const trigger = row(page, 2).getByRole("button", { name: /Synthetic arrival/ }); await trigger.evaluate(el => { (window as unknown as { savedTrigger: Element }).savedTrigger = el; }); await trigger.click();
       expect(await page.evaluate(() => JSON.stringify((window as unknown as { lastPreview: unknown }).lastPreview))).not.toContain("Synthetic arrival"); expect(page.url()).not.toContain("Synthetic");
       await page.getByRole("button", { name: "Close synthetic preview" }).click(); expect(await search(page).inputValue()).toBe("Synthetic arrival"); expect(await trigger.evaluate(el => el === document.activeElement && el === (window as unknown as { savedTrigger: Element }).savedTrigger)).toBe(true);
-      await page.evaluate(() => (window as unknown as { todayHarness: { setOwner(value: number): void } }).todayHarness.setOwner(1)); expect(await search(page).inputValue()).toBe("");
+      await page.evaluate(() => (window as unknown as { todayHarness: { setOwner(value: number): void } }).todayHarness.setOwner(1));
+      // The synthetic owner change schedules a React remount; observe its commit.
+      await expect.poll(() => search(page).inputValue()).toBe("");
     } finally { await page.close(); }
   }, 30000);
 
