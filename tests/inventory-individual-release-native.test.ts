@@ -73,7 +73,8 @@ async function open(individualAllowed = true) {
   page.on("pageerror", error => runtimeErrors.push(error.message));
   const writes: { path: string; body: Record<string, unknown> }[] = [];
   const reads: string[] = [];
-  let allowed = individualAllowed, released = false;
+  let allowed = individualAllowed, released = false, failRelease = false, holdRefresh = false;
+  const pendingRefresh: (() => void)[] = [];
   const blocks = () => [
     { blockId, inventoryUnitId: unitId, status: released ? 2 : 1, version: released ? 5 : 4 },
     { blockId: otherBlockId, inventoryUnitId: otherUnitId, status: 1, version: 4 },
@@ -105,10 +106,16 @@ async function open(individualAllowed = true) {
       if (path !== `/api/inventory/properties/${propertyId}/blocks/${blockId}/release`) {
         await route.fulfill({ status: 403, body: "Unexpected mutation" }); return;
       }
+      if (failRelease) {
+        failRelease = false; holdRefresh = true;
+        await route.fulfill({ status: 503, contentType: "application/problem+json", body: JSON.stringify({ title: "Unavailable", detail: "Retry the same operation." }) });
+        return;
+      }
       released = true;
       response = { propertyId, blockId, blockGroupId: groupId, status: 2, version: 5 };
     } else {
       reads.push(path);
+      if (holdRefresh) await new Promise<void>(resolve => pendingRefresh.push(resolve));
       if (path.endsWith("/rooms")) response = { rooms: [room], hasMore: false };
       else if (path.endsWith("/availability")) response = { propertyId, arrival: url.searchParams.get("arrival"), departure: url.searchParams.get("departure"),
         units: room.units.map(unit => ({ unit, isAvailable: false })) };
@@ -132,7 +139,8 @@ async function open(individualAllowed = true) {
   return { context, page, writes, reads, revoke: async () => {
     allowed = false;
     await page.evaluate(() => (window as unknown as { inventoryReleaseHarness: { refreshPermissions(): Promise<void> } }).inventoryReleaseHarness.refreshPermissions());
-  } };
+  }, failNextRelease: () => { failRelease = true; }, pendingRefresh,
+  finishRefresh: () => { holdRefresh = false; pendingRefresh.splice(0).forEach(resolve => resolve()); } };
 }
 
 describe("Inventory individual block release", () => {
@@ -168,5 +176,23 @@ describe("Inventory individual block release", () => {
       await expect.poll(async () => await confirm.count() === 0 || await confirm.isDisabled()).toBe(true);
       expect(writes).toEqual([]);
     } finally { await context.close(); }
+  }, 30000);
+
+  it("keeps an uncertain release while sources refresh and retries the same operation", async () => {
+    const { context, page, writes, failNextRelease, pendingRefresh, finishRefresh } = await open();
+    try {
+      await page.getByRole("button", { name: "Release Bed A", exact: true }).click();
+      failNextRelease();
+      await page.getByRole("button", { name: "Confirm release", exact: true }).click();
+      await expect.poll(() => pendingRefresh.length).toBeGreaterThan(0);
+      await page.getByRole("heading", { name: "Release Bed A?", exact: true }).waitFor();
+      expect(await page.getByRole("button", { name: "Confirm release", exact: true }).isDisabled()).toBe(true);
+      expect(writes).toHaveLength(1);
+      finishRefresh();
+      await page.getByRole("button", { name: "Try again", exact: true }).click();
+      await expect.poll(() => writes.length).toBe(2);
+      expect(writes[1]).toEqual(writes[0]);
+      await page.getByText("Active members", { exact: true }).locator("..").getByText("1", { exact: true }).waitFor();
+    } finally { finishRefresh(); await context.close(); }
   }, 30000);
 });
