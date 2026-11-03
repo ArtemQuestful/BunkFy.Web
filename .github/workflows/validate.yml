@@ -55,16 +55,6 @@ jobs:
         if: runner.os != 'Windows'
         run: pnpm verify
 
-      - name: Prepare Windows browser fixture port capacity
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # These hosted-runner fixtures create many short-lived loopback connections.
-          # Retain normal TCP cleanup; give this disposable VM sufficient client ports.
-          netsh int ipv4 set dynamicport tcp start=10000 num=55535
-          if ($LASTEXITCODE -ne 0) { throw 'Could not configure the fixture port range.' }
-          netsh int ipv4 show dynamicport tcp
-
       - name: Verify Windows with resource samples
         if: runner.os == 'Windows'
         shell: pwsh
