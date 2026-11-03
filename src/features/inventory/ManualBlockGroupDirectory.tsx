@@ -23,7 +23,7 @@ type View = "active" | "partial" | "all";
 
 export function ManualBlockGroupDirectory(props: {
   propertyId: string; propertyName: string; propertyTimeZoneId: string;
-  rooms: RoomInventory[]; mayReadCurrent: boolean; mayManage: boolean;
+  rooms: RoomInventory[]; mayReadCurrent: boolean; mayManage: boolean; mayManageIndividual: boolean;
   sources: CompositeSource[]; focusedBlockGroupId: string | null;
 }) {
   const [params, setParams] = useSearchParams();
@@ -38,7 +38,7 @@ export function ManualBlockGroupDirectory(props: {
   }} />;
 }
 
-function DirectoryPage({ propertyId, propertyName, propertyTimeZoneId, rooms, mayReadCurrent, mayManage, sources, focusedBlockGroupId, view, onViewChange }: Parameters<typeof ManualBlockGroupDirectory>[0] & { view: View; onViewChange: (view: View) => void }) {
+function DirectoryPage({ propertyId, propertyName, propertyTimeZoneId, rooms, mayReadCurrent, mayManage, mayManageIndividual, sources, focusedBlockGroupId, view, onViewChange }: Parameters<typeof ManualBlockGroupDirectory>[0] & { view: View; onViewChange: (view: View) => void }) {
   const { request } = useSession();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -58,7 +58,8 @@ function DirectoryPage({ propertyId, propertyName, propertyTimeZoneId, rooms, ma
   const source = createCompositeSource({ label: "Block groups", hasData: groups.data !== undefined,
     isLoading: groups.isLoading, error: groups.error, isFetching: groups.isFetching, refetch: () => groups.refetch() });
   const usable = compositeSourceUsable(source.state);
-  const current = mayManage && mayReadCurrent && sources.every(compositeSourceCurrent) && compositeSourceCurrent(source);
+  const evidenceCurrent = mayReadCurrent && sources.every(compositeSourceCurrent) && compositeSourceCurrent(source);
+  const current = mayManage && evidenceCurrent;
   const options = useMemo(() => buildBlockTargetOptions(propertyName, rooms), [propertyName, rooms]);
   const targetId = params.get("blockGroup");
   async function refresh(receipt?: ManualBlockGroupMutationReceipt) {
@@ -105,6 +106,7 @@ function DirectoryPage({ propertyId, propertyName, propertyTimeZoneId, rooms, ma
       {targetId && !groups.data?.blockGroups.some((group) => group.blockGroupId === targetId) && <button type="button" className="btn btn-ghost btn-sm m-3" onClick={() => setDetailsId(targetId)}>View the referenced block group</button>}
     </>}
     {detailsId && <ManualBlockGroupDetailsModal key={detailsId} propertyId={propertyId} blockGroupId={detailsId} propertyName={propertyName} rooms={rooms} canManage={current}
+      canManageIndividual={mayManageIndividual && evidenceCurrent}
       onReplace={(group) => { if (!current) return; setDetailsId(null); attempt.current = null; setWorkflow({ kind: "replace", group }); }}
       onRelease={(group) => { if (!current) return; setDetailsId(null); releaseAttempt.current = null; setRelease(group); }} onNavigateGroup={setDetailsId} onClose={() => setDetailsId(null)} />}
     {workflow && <ManualBlockGroupWorkflowModal key={workflow.kind === "replace" ? `${workflow.group.blockGroupId}:${workflow.group.version}` : "create"}

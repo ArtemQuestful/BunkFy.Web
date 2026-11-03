@@ -38,8 +38,9 @@ window.authorityRequest=async(path,options)=>{
  if(window.authorityHold)return new Promise((resolve,reject)=>window.authorityPending.push({checks,aborted:()=>!!options.signal?.aborted,finish:(status=200,denied=false)=>{try{resolve(reply(status,denied));}catch(error){reject(error);}}}));
  return reply(window.authorityStatus,window.authorityDenied);
 };
-const client=new QueryClient({defaultOptions:{queries:{retry:false,refetchOnWindowFocus:false}}});
-window.authorityCache={put:()=>client.setQueryData(['sensitive-fixture'],'private'),get:()=>client.getQueryData(['sensitive-fixture'])??null};
+const retryDelay=new URLSearchParams(location.search).get('retryDelay');
+const client=new QueryClient({defaultOptions:{queries:{retry:false,refetchOnWindowFocus:false,...(retryDelay?{retryDelay:Number(retryDelay)}:{})}}});
+window.authorityCache={put:()=>client.setQueryData(['sensitive-fixture'],'private'),get:()=>client.getQueryData(['sensitive-fixture'])??null,pending:()=>client.isFetching()};
 function Probe(){
  const [extra,setExtra]=useState(0),{session}=useSession(),scope='tenant:'+session.tenantId;
  const checks=[{permission:'staff.read',scope},...Array.from({length:extra},(_,i)=>({permission:'staff.assign-properties',scope:scope+'/property:'+i}))];
@@ -84,11 +85,14 @@ beforeAll(async () => {
 afterAll(async () => { await nativeBrowser?.close(); await nativeServer?.close(); expect(nativeErrors).toEqual([]); });
 type ProbeState = { allowed: boolean; extraAllowed: boolean; hasData: boolean; fetching: boolean; loading: boolean; error: boolean };
 async function probe(page: Page): Promise<ProbeState> { return JSON.parse(await page.locator("#probe").innerText()); }
-async function nativeOpen(workspace = false) {
+async function nativeOpen(workspace = false, retryDelay?: number) {
   const page = await nativeBrowser.newPage(); page.setDefaultTimeout(4000);
   page.on("pageerror", error => nativeErrors.push(error.message));
   page.on("console", message => { if (message.type() === "error") nativeErrors.push(message.text()); });
-  await page.goto(nativeOrigin + "__authority" + (workspace ? "?workspace" : "")); await expect.poll(async () => (await probe(page)).allowed).toBe(true); return page;
+  const parameters = new URLSearchParams();
+  if (workspace) parameters.set("workspace", "");
+  if (retryDelay !== undefined) parameters.set("retryDelay", String(retryDelay));
+  await page.goto(nativeOrigin + "__authority?" + parameters); await expect.poll(async () => (await probe(page)).allowed).toBe(true); return page;
 }
 async function pendingCount(page: Page) { return page.evaluate(() => (window as unknown as { authorityPending: unknown[] }).authorityPending.length); }
 async function holdAndExpand(page: Page, extra: number) {
@@ -97,6 +101,9 @@ async function holdAndExpand(page: Page, extra: number) {
 }
 async function finishPending(page: Page, status = 200, denied = false) {
   await page.evaluate(({ status, denied }) => { const w = window as unknown as { authorityHold: boolean; authorityPending: { finish: (s: number, d: boolean) => void }[] }; w.authorityHold = false; w.authorityPending.splice(0).forEach(r => r.finish(status, denied)); }, { status, denied });
+  // Final error assertions belong after the real aggregate and its configured
+  // retry settle. A one-second poll otherwise races the one-second retry.
+  await page.waitForFunction(() => (window as unknown as { authorityCache: { pending: () => number } }).authorityCache.pending() === 0);
 }
 
 describe("native authority snapshot continuity", () => {
@@ -223,8 +230,8 @@ describe("native authority snapshot continuity", () => {
     } finally { await page.close(); }
   }, 15000);
 
-  it("observed revoked200 conceals old grants before a second chunk fails", async () => {
-    const page = await nativeOpen(); try {
+  it.each([undefined, 1500])("observed revoked200 conceals old grants before a second chunk fails (retry delay %s)", async retryDelay => {
+    const page = await nativeOpen(false, retryDelay); try {
       await holdAndExpand(page, 33); await expect.poll(() => pendingCount(page)).toBe(2);
       await page.evaluate(() => {
         const w = window as unknown as { authorityPending: { checks: { permission: string }[]; finish: (s: number, d: boolean) => void }[] };
