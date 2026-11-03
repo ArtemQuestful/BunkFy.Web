@@ -18,7 +18,7 @@ import {SessionProvider,useSession} from "/src/app/session.tsx";
 import "/src/styles.css";
 function Capture(){
  const auth=useSession(),query=useQueryClient();
- useEffect(()=>{window.sessionHarness={adoptBrowserAccount:auth.adoptBrowserAccount,setPrivate:()=>query.setQueryData(["private"],"old-actor"),hasPrivate:()=>query.getQueryData(["private"])??null};},[auth,query]);
+ useEffect(()=>{window.sessionHarness={adoptBrowserAccount:auth.adoptBrowserAccount,conceal:auth.concealForAccountTransition,confirmCredential:(operation)=>{window.stepUpOutcome="pending";const pending=operation==="password"?auth.stepUpWithPassword("synthetic-password"):operation==="activate-totp"?auth.activateTotp("123456"):auth.disableTotp("totp","123456");void pending.then(value=>{window.stepUpResult=value;window.stepUpOutcome="accepted";}).catch(error=>{window.stepUpOutcome=error.name;});},setPrivate:()=>query.setQueryData(["private"],"old-actor"),hasPrivate:()=>query.getQueryData(["private"])??null};},[auth,query]);
  return <main><output data-session>{auth.session?.username??"Signed out"}</output><output data-restoring>{auth.isRestoring?"restoring":"ready"}</output></main>;
 }
 const query=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
@@ -125,4 +125,111 @@ describe("native cross-tab remembered-session boundary", () => {
       await pageB.close();
     }
   }, 30000);
+
+  it.each(["password", "activate-totp", "disable-totp"].flatMap(operation => ["replacement actor", "concealed session"].map(boundary => ({ operation, boundary }))))("rejects a late $operation completion after a $boundary boundary", async ({ operation, boundary }) => {
+    const ownedContext = await browser.newContext();
+    await ownedContext.addInitScript(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)), identityA);
+    const pageA = await ownedContext.newPage();
+    const pageB = await ownedContext.newPage();
+    let release: (() => void) | undefined;
+    let started = false;
+    const heldResponse = new Promise<void>(resolve => { release = resolve; });
+    await pageA.route("**/api/auth/browser/refresh", route => route.fulfill(response(token(started ? subjectB : subjectA, started ? sessionB : sessionA))));
+    await pageB.route("**/api/auth/browser/refresh", route => route.fulfill(response(token(subjectA, sessionA))));
+    const endpoint = operation === "password" ? "step-up/password" : operation === "activate-totp" ? "mfa/totp/activate" : "mfa/totp/disable";
+    await pageA.route("**/api/auth/browser/" + endpoint, async route => {
+      started = true;
+      await heldResponse;
+      await route.fulfill(response(token(subjectA, sessionA)));
+    });
+    for (const page of [pageA, pageB]) {
+      page.on("pageerror", error => runtimeErrors.push(error.message));
+      page.on("console", message => { if (message.type() === "error") runtimeErrors.push(message.text()); });
+    }
+    try {
+      await pageA.goto(origin + "__session-boundary-native");
+      await expect.poll(() => pageA.locator("[data-session]").textContent()).toBe(identityA.username);
+      await pageA.evaluate(value => (window as unknown as { sessionHarness: { confirmCredential(operation: string): void } }).sessionHarness.confirmCredential(value), operation);
+      await expect.poll(() => started).toBe(true);
+      if (boundary === "replacement actor") {
+        await pageB.goto(origin + "__session-boundary-native?no-restore=1");
+        await expect.poll(() => pageB.evaluate(() => Boolean((window as unknown as { sessionHarness?: unknown }).sessionHarness))).toBe(true);
+        await pageB.evaluate(account => (window as unknown as { sessionHarness: { adoptBrowserAccount(value: unknown): void } }).sessionHarness.adoptBrowserAccount(account), { ...identityB, accessToken: token(subjectB, sessionB) });
+        // Privacy changes immediately; the new actor's cookie refresh waits
+        // for the old credential operation to release the shared browser lock.
+        await expect.poll(() => pageA.locator("[data-session]").textContent()).not.toBe(identityA.username);
+      } else {
+        await pageA.evaluate(() => (window as unknown as { sessionHarness: { conceal(): void } }).sessionHarness.conceal());
+        await expect.poll(() => pageA.locator("[data-session]").textContent()).toBe("Signed out");
+      }
+      release!();
+      await expect.poll(() => pageA.evaluate(() => (window as unknown as { stepUpOutcome?: string }).stepUpOutcome)).toBe("SessionBoundarySupersededError");
+      await expect.poll(() => pageA.locator("[data-session]").textContent()).toBe(boundary === "replacement actor" ? identityB.username : "Signed out");
+      const stored = await pageA.evaluate(() => localStorage.getItem("bunkfy.session.identity.v2"));
+      if (boundary === "replacement actor") expect(stored).toContain(sessionB);
+      else expect(stored).toBeNull();
+    } finally {
+      release?.();
+      await ownedContext.close();
+    }
+  }, 30000);
+
+
+  it.each(["password", "activate-totp", "disable-totp"])("preserves the successful %s request and session result", async operation => {
+    const ownedContext = await browser.newContext();
+    await ownedContext.addInitScript(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)), identityA);
+    const page = await ownedContext.newPage();
+    const endpoint = operation === "password" ? "step-up/password" : operation === "activate-totp" ? "mfa/totp/activate" : "mfa/totp/disable";
+    const writes: unknown[] = [];
+    await page.route("**/api/auth/browser/refresh", route => route.fulfill(response(token(subjectA, sessionA))));
+    await page.route("**/api/auth/browser/" + endpoint, async route => {
+      writes.push({ method: route.request().method(), body: route.request().postDataJSON() });
+      if (operation === "disable-totp") await route.fulfill({ status: 204 });
+      else await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accessToken: token(subjectA, sessionA), recoveryCodes: ["synthetic-recovery-code"] }) });
+    });
+    page.on("pageerror", error => runtimeErrors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") runtimeErrors.push(message.text()); });
+    try {
+      await page.goto(origin + "__session-boundary-native");
+      await expect.poll(() => page.locator("[data-session]").textContent()).toBe(identityA.username);
+      await page.evaluate(value => (window as unknown as { sessionHarness: { confirmCredential(operation: string): void } }).sessionHarness.confirmCredential(value), operation);
+      await expect.poll(() => page.evaluate(() => (window as unknown as { stepUpOutcome?: string }).stepUpOutcome)).toBe("accepted");
+      expect(writes).toEqual([{ method: "POST", body: operation === "password" ? { password: "synthetic-password" } : operation === "activate-totp" ? { code: "123456" } : { codeType: "totp", code: "123456" } }]);
+      expect(await page.locator("[data-session]").textContent()).toBe(operation === "disable-totp" ? "Signed out" : identityA.username);
+      if (operation === "activate-totp") expect(await page.evaluate(() => (window as unknown as { stepUpResult?: unknown }).stepUpResult)).toEqual(["synthetic-recovery-code"]);
+    } finally { await ownedContext.close(); }
+  }, 30000);
+
+  it.each(["password", "activate-totp", "disable-totp"])("does not dispatch a queued %s operation after concealment", async operation => {
+    const ownedContext = await browser.newContext();
+    await ownedContext.addInitScript(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)), identityA);
+    const page = await ownedContext.newPage();
+    let writes = 0;
+    await page.route("**/api/auth/browser/refresh", route => route.fulfill(response(token(subjectA, sessionA))));
+    const endpoint = operation === "password" ? "step-up/password" : operation === "activate-totp" ? "mfa/totp/activate" : "mfa/totp/disable";
+    await page.route("**/api/auth/browser/" + endpoint, async route => { writes++; await route.fulfill(response(token(subjectA, sessionA))); });
+    page.on("pageerror", error => runtimeErrors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") runtimeErrors.push(message.text()); });
+    try {
+      await page.goto(origin + "__session-boundary-native");
+      await expect.poll(() => page.locator("[data-session]").textContent()).toBe(identityA.username);
+      await page.evaluate(() => {
+        void navigator.locks.request("bunkfy.browser-session.cookies", async () => {
+          await new Promise<void>(resolve => { (window as unknown as { releaseAuthLock?: () => void }).releaseAuthLock = resolve; });
+        });
+      });
+      await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { releaseAuthLock?: unknown }).releaseAuthLock))).toBe(true);
+      await page.evaluate(value => (window as unknown as { sessionHarness: { confirmCredential(operation: string): void } }).sessionHarness.confirmCredential(value), operation);
+      await expect.poll(() => page.evaluate(async () => (await navigator.locks.query()).pending?.length ?? 0)).toBeGreaterThan(0);
+      await page.evaluate(() => (window as unknown as { sessionHarness: { conceal(): void } }).sessionHarness.conceal());
+      await page.evaluate(() => (window as unknown as { releaseAuthLock?: () => void }).releaseAuthLock?.());
+      await expect.poll(() => page.evaluate(() => (window as unknown as { stepUpOutcome?: string }).stepUpOutcome)).toBe("SessionBoundarySupersededError");
+      expect(writes).toBe(0);
+      expect(await page.locator("[data-session]").textContent()).toBe("Signed out");
+    } finally {
+      await page.evaluate(() => (window as unknown as { releaseAuthLock?: () => void }).releaseAuthLock?.()).catch(() => {});
+      await ownedContext.close();
+    }
+  }, 30000);
+
 });
