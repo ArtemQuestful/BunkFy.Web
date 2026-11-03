@@ -340,7 +340,7 @@ export function InventoryPage() {
 
         <ManualBlockGroupDirectory key={`${sessionIdentityKey(session)}:${selectedPropertyId}`}
           propertyId={selectedPropertyId} propertyName={selectedProperty.name} propertyTimeZoneId={propertyTimeZoneId}
-          rooms={rooms} mayReadCurrent={mayReadCurrent} mayManage={canManageGroups}
+          rooms={rooms} mayReadCurrent={mayReadCurrent} mayManage={canManageGroups} mayManageIndividual={canManageBlocks}
           sources={[permissionSource, propertySource, inventorySource, blockSource]} focusedBlockGroupId={focusedBlockGroupId} />
       </div>
 
