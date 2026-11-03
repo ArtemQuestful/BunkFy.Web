@@ -73,7 +73,8 @@ async function open(individualAllowed = true) {
   page.on("pageerror", error => runtimeErrors.push(error.message));
   const writes: { path: string; body: Record<string, unknown> }[] = [];
   const reads: string[] = [];
-  let allowed = individualAllowed, released = false, failRelease = false, holdRefresh = false;
+  let allowed = individualAllowed, released = false, failRelease = false, commitBeforeFailure = false, holdRefresh = false;
+  let committedReleases = 0;
   const pendingRefresh: (() => void)[] = [];
   const blocks = () => [
     { blockId, inventoryUnitId: unitId, status: released ? 2 : 1, version: released ? 5 : 4 },
@@ -81,7 +82,7 @@ async function open(individualAllowed = true) {
   ].map(block => ({ ...block, blockGroupId: groupId, propertyId, arrival: "2026-11-05", departure: "2026-11-07", reason: "Maintenance",
     createdAtUtc: "2026-11-01T12:00:00Z", releasedAtUtc: released && block.blockId === blockId ? "2026-11-03T12:00:00Z" : null }));
   const group = () => ({ blockGroupId: groupId, propertyId, target: { kind: 4, roomId, inventoryUnitId: null, bedId: null, buildingLabel: null, floorLabel: null },
-    arrival: "2026-11-05", departure: "2026-11-07", reason: "Maintenance", status: released ? 2 : 1, version: released ? 10 : 9,
+    arrival: "2026-11-05", departure: "2026-11-07", reason: "Maintenance", status: 1, version: released ? 10 : 9,
     initialBlockCount: 2, totalBlockCount: 2, activeBlockCount: released ? 1 : 2, releasedBlockCount: released ? 1 : 0,
     replacesGroupId: null, replacedByGroupId: null, createdAtUtc: "2026-11-01T12:00:00Z", updatedAtUtc: null,
     releasedAtUtc: null, createdByActorId: subjectId, lastModifiedByActorId: null });
@@ -107,10 +108,12 @@ async function open(individualAllowed = true) {
         await route.fulfill({ status: 403, body: "Unexpected mutation" }); return;
       }
       if (failRelease) {
-        failRelease = false; holdRefresh = true;
+        failRelease = false; released = commitBeforeFailure; holdRefresh = true;
+        if (released) committedReleases++;
         await route.fulfill({ status: 503, contentType: "application/problem+json", body: JSON.stringify({ title: "Unavailable", detail: "Retry the same operation." }) });
         return;
       }
+      if (!released) committedReleases++;
       released = true;
       response = { propertyId, blockId, blockGroupId: groupId, status: 2, version: 5 };
     } else {
@@ -139,7 +142,8 @@ async function open(individualAllowed = true) {
   return { context, page, writes, reads, revoke: async () => {
     allowed = false;
     await page.evaluate(() => (window as unknown as { inventoryReleaseHarness: { refreshPermissions(): Promise<void> } }).inventoryReleaseHarness.refreshPermissions());
-  }, failNextRelease: () => { failRelease = true; }, pendingRefresh,
+  }, failNextRelease: (committed = false) => { failRelease = true; commitBeforeFailure = committed; }, pendingRefresh,
+  committedReleases: () => committedReleases,
   finishRefresh: () => { holdRefresh = false; pendingRefresh.splice(0).forEach(resolve => resolve()); } };
 }
 
@@ -193,6 +197,29 @@ describe("Inventory individual block release", () => {
       await expect.poll(() => writes.length).toBe(2);
       expect(writes[1]).toEqual(writes[0]);
       await page.getByText("Active members", { exact: true }).locator("..").getByText("1", { exact: true }).waitFor();
+    } finally { finishRefresh(); await context.close(); }
+  }, 30000);
+
+  it("replays a committed release after a lost response with the same operation and version", async () => {
+    const { context, page, writes, failNextRelease, pendingRefresh, finishRefresh, committedReleases } = await open();
+    try {
+      await page.getByRole("button", { name: "Release Bed A", exact: true }).click();
+      failNextRelease(true);
+      await page.getByRole("button", { name: "Confirm release", exact: true }).click();
+      await expect.poll(() => pendingRefresh.length).toBeGreaterThan(0);
+      await page.getByRole("heading", { name: "Release Bed A?", exact: true }).waitFor();
+      expect(await page.getByRole("button", { name: "Confirm release", exact: true }).isDisabled()).toBe(true);
+      finishRefresh();
+      await page.getByText("Active members", { exact: true }).locator("..").getByText("1", { exact: true }).waitFor();
+      expect(writes).toHaveLength(1);
+      expect(committedReleases()).toBe(1);
+      await page.getByRole("button", { name: "Try again", exact: true }).click();
+      await expect.poll(() => writes.length).toBe(2);
+      expect(writes[1]).toEqual(writes[0]);
+      await expect.poll(() => page.getByRole("heading", { name: "Release Bed A?", exact: true }).count()).toBe(0);
+      expect(await page.getByRole("button", { name: "Release Bed A", exact: true }).count()).toBe(0);
+      await page.getByRole("button", { name: "Release Bed B", exact: true }).waitFor();
+      expect(committedReleases()).toBe(1);
     } finally { finishRefresh(); await context.close(); }
   }, 30000);
 });
