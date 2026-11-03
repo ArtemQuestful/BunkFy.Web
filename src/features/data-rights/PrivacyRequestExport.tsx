@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileCheck2, FileClock, KeyRound, RefreshCw, ShieldAlert } from "lucide-react";
+import { Download, FileCheck2, FileClock, KeyRound, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Link } from "react-router";
 import { ApiError } from "../../api/client";
 import type { DataRightsCase, DataRightsExportArtifact } from "../../api/types";
 import { isInsufficientAuthenticationError } from "../../app/authenticationAssurance";
@@ -16,6 +15,7 @@ import {
   CompositeSourceNotice,
 } from "../../components/ui/CompositeSourceNotice";
 import { ErrorState, StatusBadge } from "../../components/ui/primitives";
+import { RecentAuthenticationPrompt } from "../../components/ui/RecentAuthenticationPrompt";
 import {
   dataRightsExportNeedsLiveRefresh,
   dataRightsExportStatusKey,
@@ -80,7 +80,10 @@ export function PrivacyRequestExport({
   const [password, setPassword] = useState("");
   const [stepUpError, setStepUpError] = useState<unknown>(null);
   const [showPasswordStepUp, setShowPasswordStepUp] = useState(false);
-  const [downloadNeedsMfa, setDownloadNeedsMfa] = useState(false);
+  const [downloadRecovery, setDownloadRecovery] = useState<{
+    submission: ExportDownloadSubmission;
+    error: unknown;
+  } | null>(null);
   const generationAttempt = useRef<DataRightsExportGenerationAttempt | null>(null);
   const observedTerminal = useRef<string | null>(null);
   const artifactQueryKey = dataRightsExportQueryKey(
@@ -115,6 +118,8 @@ export function PrivacyRequestExport({
   const artifactCurrent = compositeSourceCurrent(artifactSource);
   const artifactUsable = compositeSourceUsable(artifactSource.state);
   const authorityRef = useRef({
+    canDownload,
+    downloadRecovery,
     permissionCurrent,
     caseCurrent,
     selectedEvidenceCurrent,
@@ -125,6 +130,8 @@ export function PrivacyRequestExport({
     artifact: artifact.data,
   });
   authorityRef.current = {
+    canDownload,
+    downloadRecovery,
     permissionCurrent,
     caseCurrent,
     selectedEvidenceCurrent,
@@ -241,44 +248,34 @@ export function PrivacyRequestExport({
       }
     },
   });
-  const downloadArtifact = useMutation({
-    mutationFn: async (submission: ExportDownloadSubmission) => {
-      const current = authorityRef.current;
-      const artifactMatches = current.artifact?.id === submission.artifact.id &&
-        current.artifact.version === submission.artifact.version &&
-        current.artifact.status === submission.artifact.status;
-      if (!dataRightsSubmissionMatches(
+  function downloadSubmissionCurrent(submission: ExportDownloadSubmission): boolean {
+    const current = authorityRef.current;
+    return current.canDownload && dataRightsSubmissionMatches(
         current.operatorScopeKey,
         current.scopeKey,
         submission.operatorScopeKey,
         submission.scopeKey,
-      ) || !dataRightsCaseMatches(current.dataRightsCase, submission.caseSnapshot) ||
-        !artifactMatches || !dataRightsMutationAllowed("download-export", {
+      ) && dataRightsCaseMatches(current.dataRightsCase, submission.caseSnapshot) &&
+      current.artifact?.id === submission.artifact.id &&
+      current.artifact.version === submission.artifact.version &&
+      current.artifact.status === submission.artifact.status &&
+      dataRightsExportStatusKey(current.artifact.status) === "available" &&
+      dataRightsMutationAllowed("download-export", {
           permissionsCurrent: current.permissionCurrent,
           caseCurrent: current.caseCurrent,
           supportingSourceCurrent: current.artifactCurrent,
-        })) {
-        throw dataRightsSourceChangedError();
-      }
+        });
+  }
+
+  const downloadArtifact = useMutation({
+    mutationFn: async (submission: ExportDownloadSubmission) => {
+      if (!downloadSubmissionCurrent(submission)) throw dataRightsSourceChangedError();
       return download(
         `${submission.basePath}/export/${submission.artifact.id}/download`,
       );
     },
     onSuccess: (result, submission) => {
-      const current = authorityRef.current;
-      if (!dataRightsSubmissionMatches(
-        current.operatorScopeKey,
-        current.scopeKey,
-        submission.operatorScopeKey,
-        submission.scopeKey,
-      ) || !dataRightsCaseMatches(current.dataRightsCase, submission.caseSnapshot) ||
-        current.artifact?.id !== submission.artifact.id ||
-        current.artifact.version !== submission.artifact.version ||
-        !dataRightsMutationAllowed("download-export", {
-          permissionsCurrent: current.permissionCurrent,
-          caseCurrent: current.caseCurrent,
-          supportingSourceCurrent: current.artifactCurrent,
-        })) return;
+      if (!downloadSubmissionCurrent(submission)) return;
       const url = URL.createObjectURL(result.blob);
       try {
         const anchor = document.createElement("a");
@@ -289,27 +286,12 @@ export function PrivacyRequestExport({
       } finally {
         URL.revokeObjectURL(url);
       }
-      setDownloadNeedsMfa(false);
+      setDownloadRecovery(null);
     },
     onError: (error, submission) => {
-      const current = authorityRef.current;
-      if (!dataRightsSubmissionMatches(
-        current.operatorScopeKey,
-        current.scopeKey,
-        submission.operatorScopeKey,
-        submission.scopeKey,
-      )) return;
-      const artifactMatches = current.artifact?.id === submission.artifact.id &&
-        current.artifact.version === submission.artifact.version &&
-        current.artifact.status === submission.artifact.status;
-      if (!dataRightsCaseMatches(current.dataRightsCase, submission.caseSnapshot) ||
-        !artifactMatches || !dataRightsMutationAllowed("download-export", {
-          permissionsCurrent: current.permissionCurrent,
-          caseCurrent: current.caseCurrent,
-          supportingSourceCurrent: current.artifactCurrent,
-        })) return;
+      if (!downloadSubmissionCurrent(submission)) return;
       if (isInsufficientAuthenticationError(error)) {
-        setDownloadNeedsMfa(true);
+        setDownloadRecovery({ submission, error });
       }
     },
   });
@@ -320,7 +302,7 @@ export function PrivacyRequestExport({
     setPassword("");
     setShowPasswordStepUp(false);
     setStepUpError(null);
-    setDownloadNeedsMfa(false);
+    setDownloadRecovery(null);
   }, [basePath, dataRightsCase.id, operatorScopeKey, scopeKey]);
 
   useEffect(() => {
@@ -384,6 +366,12 @@ export function PrivacyRequestExport({
       supportingSourceCurrent: artifactCurrent,
     },
   );
+  const downloadRecoveryCurrent = downloadRecovery !== null &&
+    downloadSubmissionCurrent(downloadRecovery.submission);
+
+  useEffect(() => {
+    if (downloadRecovery && !downloadRecoveryCurrent) setDownloadRecovery(null);
+  }, [downloadRecovery, downloadRecoveryCurrent]);
 
   function generationSubmission(
     intent: DataRightsExportGenerationIntent,
@@ -566,21 +554,18 @@ export function PrivacyRequestExport({
         </form>
       )}
 
-      {downloadNeedsMfa && downloadAuthorityCurrent && (
-        <div className="mt-4 flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning/8 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <ShieldAlert size={18} className="mt-0.5 shrink-0 text-warning-content" />
-            <div>
-              <p className="text-sm font-semibold">A recent MFA sign-in is required</p>
-              <p className="mt-1 text-xs leading-5 text-base-content/55">
-                Complete a fresh MFA sign-in, then retry. You can configure and
-                manage MFA in account security.
-              </p>
-            </div>
-          </div>
-          <Link className="btn btn-outline btn-sm shrink-0" to="/account">
-            Account security
-          </Link>
+      {downloadRecovery && downloadRecoveryCurrent && (
+        <div className="mt-4">
+          <RecentAuthenticationPrompt
+            error={downloadRecovery.error}
+            description="Verify your identity to download this protected export."
+            onAuthenticated={() => {
+              if (authorityRef.current.downloadRecovery !== downloadRecovery ||
+                !downloadSubmissionCurrent(downloadRecovery.submission)) return;
+              setDownloadRecovery(null);
+              downloadArtifact.mutate(downloadRecovery.submission);
+            }}
+          />
         </div>
       )}
 
