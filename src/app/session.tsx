@@ -141,7 +141,8 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
 
   const publishSessionIdentity = useCallback((identity: SessionIdentity | null) => {
     const signature = sessionIdentitySignature(identity);
-    if (publishedIdentityRef.current === signature) return;
+    if (publishedIdentityRef.current === signature &&
+      sessionIdentitySignature(readSessionIdentity()) === signature) return;
     publishedIdentityRef.current = signature;
     writeSessionIdentity(identity);
     sessionChannelRef.current?.postMessage(serializableSessionIdentity(identity));
@@ -751,12 +752,26 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
         ? async () => {
           // The cookie lock may have been held by a newer sign-in. Local
           // sign-out already completed; never clean up its replacement cookie.
-          if (sessionRef.current || readSessionIdentity()) return;
-          await apiRequest<void>(
-            "/api/auth/browser/sign-out",
-            { method: "POST" },
-            active,
-          );
+          const hasReplacementSession = () => {
+            const current = sessionRef.current;
+            const persisted = readSessionIdentity();
+            return (current !== null && !matchesAuthenticationSession(current, active)) ||
+              (persisted !== null && !matchesAuthenticationSession(persisted, active));
+          };
+          if (hasReplacementSession()) return;
+          acceptsRefreshRef.current = false;
+          try {
+            await apiRequest<void>(
+              "/api/auth/browser/sign-out",
+              { method: "POST" },
+              active,
+            );
+          } finally {
+            if (!hasReplacementSession()) {
+              acceptsRefreshRef.current = false;
+              setSession(null);
+            }
+          }
         }
         : undefined,
     );
@@ -773,13 +788,9 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     // Global revocation belongs to the initiating subject/session. A workspace
     // change keeps that intent; a different account or fresh sign-in does not.
     const isInitiatingSessionCurrent = () => {
-      const current = sessionRef.current;
-      if (current?.subjectId !== active.subjectId || current?.sessionId !== active.sessionId) return false;
       const persisted = readSessionIdentity();
-      return !persisted || (
-        persisted.subjectId?.toLowerCase() === active.subjectId &&
-        persisted.sessionId?.toLowerCase() === active.sessionId
-      );
+      return matchesAuthenticationSession(sessionRef.current, active) &&
+        (!persisted || matchesAuthenticationSession(persisted, active));
     };
 
     try {
@@ -885,6 +896,12 @@ export function useSession() {
   if (!value)
     throw new Error("useSession must be used inside SessionProvider.");
   return value;
+}
+
+function matchesAuthenticationSession(identity: SessionIdentity | null, expected: ApiSession): boolean {
+  if (!identity || !expected.subjectId || !expected.sessionId) return false;
+  return identity.subjectId?.toLowerCase() === expected.subjectId.toLowerCase() &&
+    identity.sessionId?.toLowerCase() === expected.sessionId.toLowerCase();
 }
 
 function readSessionIdentity(): SessionIdentity | null {

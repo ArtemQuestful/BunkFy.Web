@@ -339,14 +339,17 @@ describe("native cross-tab remembered-session boundary", () => {
     }
   }, 30000);
 
-  it.each([204, 503].flatMap(status => ["replacement account", "persisted replacement", "unchanged browser"].map(boundary => ({ status, boundary }))))("preserves immediate local sign-out with queued cleanup $status and $boundary", async ({ status, boundary }) => {
+  it.each([204, 503].flatMap(status => ["replacement account", "persisted replacement", "replacement during cleanup", "unchanged browser", "same session workspace change", "restored initiating session"].map(boundary => ({ status, boundary }))))("preserves immediate local sign-out with queued cleanup $status and $boundary", async ({ status, boundary }) => {
     const ownedContext = await browser.newContext();
     await ownedContext.addInitScript(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)), identityA);
     const page = await ownedContext.newPage();
     const cookieWrites: string[] = [];
+    let releaseCookie!: () => void;
+    const heldCookie = new Promise<void>(resolve => { releaseCookie = resolve; });
     await page.route("**/api/auth/browser/refresh", route => route.fulfill(response(token(subjectA, sessionA))));
     await page.route("**/api/auth/browser/sign-out", async route => {
       cookieWrites.push(route.request().headers().authorization);
+      if (boundary === "replacement during cleanup") await heldCookie;
       await route.fulfill(status === 204 ? { status } : { status, contentType: "application/json", body: JSON.stringify({ title: "Temporarily unavailable" }) });
     });
     page.on("pageerror", error => runtimeErrors.push(error.message));
@@ -368,27 +371,44 @@ describe("native cross-tab remembered-session boundary", () => {
       expect(await page.evaluate(() => (window as unknown as { sessionHarness: { hasPrivate(): unknown } }).sessionHarness.hasPrivate())).toBeNull();
       expect(cookieWrites).toEqual([]);
       await expect.poll(() => page.evaluate(async () => (await navigator.locks.query()).pending?.length ?? 0)).toBeGreaterThan(0);
-      if (boundary === "replacement account") {
+      if (boundary === "replacement during cleanup") {
+        await page.evaluate(() => (window as unknown as { releaseAuthLock?: () => void }).releaseAuthLock?.());
+        await expect.poll(() => cookieWrites.length).toBe(1);
+      }
+      if (boundary === "replacement account" || boundary === "replacement during cleanup") {
         await page.evaluate(account => {
           const harness = (window as unknown as { sessionHarness: { adoptBrowserAccount(value: unknown): void; setPrivate(value: string): void } }).sessionHarness;
           harness.adoptBrowserAccount(account); harness.setPrivate("replacement-private-data");
         }, { ...identityB, accessToken: token(subjectB, sessionB) });
       } else if (boundary === "persisted replacement") {
         await page.evaluate(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)), identityB);
+      } else if (boundary === "same session workspace change") {
+        await page.evaluate(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)), { ...identityA, tenantId: "another-workspace", generation: "workspace-change" });
+      } else if (boundary === "restored initiating session") {
+        await page.evaluate(account => {
+          const harness = (window as unknown as { sessionHarness: { adoptBrowserAccount(value: unknown): void; setPrivate(): void } }).sessionHarness;
+          harness.adoptBrowserAccount(account); harness.setPrivate();
+        }, { ...identityA, tenantId: "another-workspace", generation: "workspace-change", accessToken: token(subjectA, sessionA) });
       }
+      releaseCookie();
       await page.evaluate(async () => {
         (window as unknown as { releaseAuthLock?: () => void }).releaseAuthLock?.();
         await navigator.locks.request("bunkfy.browser-session.cookies", () => {});
       });
-      expect(cookieWrites).toEqual(boundary === "unchanged browser" ? [`Bearer ${token(subjectA, sessionA)}`] : []);
+      const replacement = boundary === "replacement account" || boundary === "persisted replacement" || boundary === "replacement during cleanup";
+      expect(cookieWrites).toEqual(replacement && boundary !== "replacement during cleanup" ? [] : [`Bearer ${token(subjectA, sessionA)}`]);
       const stored = await page.evaluate(() => localStorage.getItem("bunkfy.session.identity.v2"));
-      if (boundary === "unchanged browser") expect(stored).toBeNull();
-      else expect(stored).toContain(sessionB);
-      if (boundary === "replacement account") {
+      if (replacement) expect(stored).toContain(sessionB);
+      else expect(stored).toBeNull();
+      if (boundary === "replacement account" || boundary === "replacement during cleanup") {
         expect(await page.locator("[data-session-id]").textContent()).toBe(sessionB);
         expect(await page.evaluate(() => (window as unknown as { sessionHarness: { hasPrivate(): unknown } }).sessionHarness.hasPrivate())).toBe("replacement-private-data");
-      } else expect(await page.locator("[data-session]").textContent()).toBe("Signed out");
+      } else {
+        expect(await page.locator("[data-session]").textContent()).toBe("Signed out");
+        expect(await page.evaluate(() => (window as unknown as { sessionHarness: { hasPrivate(): unknown } }).sessionHarness.hasPrivate())).toBeNull();
+      }
     } finally {
+      releaseCookie();
       await page.evaluate(() => (window as unknown as { releaseAuthLock?: () => void }).releaseAuthLock?.()).catch(() => {});
       await ownedContext.close();
     }
