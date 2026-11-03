@@ -748,38 +748,61 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     startBrowserSessionSignOut(
       () => setSession(null),
       active
-        ? () =>
-          apiRequest<void>(
+        ? async () => {
+          // The cookie lock may have been held by a newer sign-in. Local
+          // sign-out already completed; never clean up its replacement cookie.
+          if (sessionRef.current || readSessionIdentity()) return;
+          await apiRequest<void>(
             "/api/auth/browser/sign-out",
             { method: "POST" },
             active,
-          )
+          );
+        }
         : undefined,
     );
   }, [setSession]);
 
   const logoutAll = useCallback(async () => {
     const active = sessionRef.current;
-    try {
-      if (active)
-        await apiRequest<void>(
-          "/api/auth/sign-out-all",
-          { method: "POST" },
-          active,
-        );
-    } finally {
+    if (!active) {
       acceptsRefreshRef.current = false;
-      try {
-        if (active)
+      setSession(null);
+      return;
+    }
+
+    // Global revocation belongs to the initiating subject/session. A workspace
+    // change keeps that intent; a different account or fresh sign-in does not.
+    const isInitiatingSessionCurrent = () => {
+      const current = sessionRef.current;
+      if (current?.subjectId !== active.subjectId || current?.sessionId !== active.sessionId) return false;
+      const persisted = readSessionIdentity();
+      return !persisted || (
+        persisted.subjectId?.toLowerCase() === active.subjectId &&
+        persisted.sessionId?.toLowerCase() === active.sessionId
+      );
+    };
+
+    try {
+      await apiRequest<void>(
+        "/api/auth/sign-out-all",
+        { method: "POST" },
+        active,
+      );
+    } finally {
+      await runWithBrowserSessionLock(async () => {
+        if (!isInitiatingSessionCurrent()) return;
+        acceptsRefreshRef.current = false;
+        try {
           await apiRequest<void>(
             "/api/auth/browser/sign-out",
             { method: "POST" },
             active,
           );
-      } catch {
-        // The global revocation can make the cookie sign-out request unauthorized.
-      }
-      setSession(null);
+        } catch {
+          // Global revocation can make the cookie sign-out request unauthorized.
+        }
+        if (isInitiatingSessionCurrent()) setSession(null);
+      });
     }
   }, [setSession]);
 
