@@ -261,8 +261,8 @@ function IndividualBlockRelease({ member, propertyId, propertyName, rooms, autho
     onSuccess: onCompleted });
   const [opened, setOpened] = useState(false);
   useEffect(() => {
-    if (!member || !authorityCurrent) { onClose(); return; }
     if (opened) return;
+    if (!member || !authorityCurrent) { onClose(); return; }
     const unit = rooms.flatMap(room => room.units).find(unit => unit.inventoryUnitId === member.inventoryUnitId);
     editor.openRelease(member.blockGroupId, unit?.label ?? "inventory unit", "Release only this selected inventory unit.", trigger);
     setOpened(true);

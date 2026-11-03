@@ -1,7 +1,8 @@
+import { launchNativeChromium } from "./support/nativeChromium";
 import { createServer, normalizePath, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { chromium, type Browser, type BrowserContext } from "@playwright/test";
+import { type Browser, type BrowserContext } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -76,7 +77,7 @@ beforeAll(async () => {
   });
   await server.listen();
   origin = server.resolvedUrls!.local[0]!;
-  browser = await chromium.launch({ headless: true });
+  browser = await launchNativeChromium();
   context = await browser.newContext();
   await context.addInitScript(identity => {
     if (!localStorage.getItem("bunkfy.session.identity.v2")) localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity));

@@ -59,8 +59,11 @@ jobs:
         shell: pwsh
         run: |
           Get-CimInstance Win32_OperatingSystem |
-            Select-Object TotalVisibleMemorySize, FreePhysicalMemory
-          Get-NetTCPConnection | Group-Object State | Select-Object Name, Count
+            Select-Object TotalVisibleMemorySize, FreePhysicalMemory |
+            ConvertTo-Json -Compress
+          Get-NetTCPConnection | Group-Object State, OwningProcess |
+            Sort-Object Count -Descending | Select-Object -First 15 Name, Count |
+            ConvertTo-Json -Compress
           netsh int ipv4 show dynamicport tcp
 
   validate:
