@@ -141,7 +141,8 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
 
   const publishSessionIdentity = useCallback((identity: SessionIdentity | null) => {
     const signature = sessionIdentitySignature(identity);
-    if (publishedIdentityRef.current === signature) return;
+    if (publishedIdentityRef.current === signature &&
+      sessionIdentitySignature(readSessionIdentity()) === signature) return;
     publishedIdentityRef.current = signature;
     writeSessionIdentity(identity);
     sessionChannelRef.current?.postMessage(serializableSessionIdentity(identity));
@@ -748,38 +749,71 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     startBrowserSessionSignOut(
       () => setSession(null),
       active
-        ? () =>
-          apiRequest<void>(
-            "/api/auth/browser/sign-out",
-            { method: "POST" },
-            active,
-          )
+        ? async () => {
+          // The cookie lock may have been held by a newer sign-in. Local
+          // sign-out already completed; never clean up its replacement cookie.
+          const hasReplacementSession = () => {
+            const current = sessionRef.current;
+            const persisted = readSessionIdentity();
+            return (current !== null && !matchesAuthenticationSession(current, active)) ||
+              (persisted !== null && !matchesAuthenticationSession(persisted, active));
+          };
+          if (hasReplacementSession()) return;
+          acceptsRefreshRef.current = false;
+          try {
+            await apiRequest<void>(
+              "/api/auth/browser/sign-out",
+              { method: "POST" },
+              active,
+            );
+          } finally {
+            if (!hasReplacementSession()) {
+              acceptsRefreshRef.current = false;
+              setSession(null);
+            }
+          }
+        }
         : undefined,
     );
   }, [setSession]);
 
   const logoutAll = useCallback(async () => {
     const active = sessionRef.current;
-    try {
-      if (active)
-        await apiRequest<void>(
-          "/api/auth/sign-out-all",
-          { method: "POST" },
-          active,
-        );
-    } finally {
+    if (!active) {
       acceptsRefreshRef.current = false;
-      try {
-        if (active)
+      setSession(null);
+      return;
+    }
+
+    // Global revocation belongs to the initiating subject/session. A workspace
+    // change keeps that intent; a different account or fresh sign-in does not.
+    const isInitiatingSessionCurrent = () => {
+      const persisted = readSessionIdentity();
+      return matchesAuthenticationSession(sessionRef.current, active) &&
+        (!persisted || matchesAuthenticationSession(persisted, active));
+    };
+
+    try {
+      await apiRequest<void>(
+        "/api/auth/sign-out-all",
+        { method: "POST" },
+        active,
+      );
+    } finally {
+      await runWithBrowserSessionLock(async () => {
+        if (!isInitiatingSessionCurrent()) return;
+        acceptsRefreshRef.current = false;
+        try {
           await apiRequest<void>(
             "/api/auth/browser/sign-out",
             { method: "POST" },
             active,
           );
-      } catch {
-        // The global revocation can make the cookie sign-out request unauthorized.
-      }
-      setSession(null);
+        } catch {
+          // Global revocation can make the cookie sign-out request unauthorized.
+        }
+        if (isInitiatingSessionCurrent()) setSession(null);
+      });
     }
   }, [setSession]);
 
@@ -862,6 +896,12 @@ export function useSession() {
   if (!value)
     throw new Error("useSession must be used inside SessionProvider.");
   return value;
+}
+
+function matchesAuthenticationSession(identity: SessionIdentity | null, expected: ApiSession): boolean {
+  if (!identity || !expected.subjectId || !expected.sessionId) return false;
+  return identity.subjectId?.toLowerCase() === expected.subjectId.toLowerCase() &&
+    identity.sessionId?.toLowerCase() === expected.sessionId.toLowerCase();
 }
 
 function readSessionIdentity(): SessionIdentity | null {
