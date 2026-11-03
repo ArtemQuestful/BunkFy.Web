@@ -641,15 +641,20 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     async (password: string) => {
       const active = sessionRef.current;
       if (!active) throw new Error("You are signed out.");
-      const response = await apiRequest<BrowserAuthResponse>(
-        "/api/auth/browser/step-up/password",
-        {
-          method: "POST",
-          body: JSON.stringify({ password }),
-        },
-        active,
-      );
-      setSession({ ...active, accessToken: response.accessToken });
+      const boundarySequence = boundarySequenceRef.current;
+      await runWithBrowserSessionLock(async () => {
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        const response = await apiRequest<BrowserAuthResponse>(
+          "/api/auth/browser/step-up/password",
+          {
+            method: "POST",
+            body: JSON.stringify({ password }),
+          },
+          active,
+        );
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        setSession({ ...active, accessToken: response.accessToken });
+      });
     },
     [setSession],
   );
@@ -658,16 +663,21 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     async (code: string): Promise<string[]> => {
       const active = sessionRef.current;
       if (!active) throw new Error("You are signed out.");
-      const response = await apiRequest<BrowserTotpActivation>(
-        "/api/auth/browser/mfa/totp/activate",
-        {
-          method: "POST",
-          body: JSON.stringify({ code }),
-        },
-        active,
-      );
-      setSession({ ...active, accessToken: response.accessToken });
-      return response.recoveryCodes;
+      const boundarySequence = boundarySequenceRef.current;
+      return await runWithBrowserSessionLock(async () => {
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        const response = await apiRequest<BrowserTotpActivation>(
+          "/api/auth/browser/mfa/totp/activate",
+          {
+            method: "POST",
+            body: JSON.stringify({ code }),
+          },
+          active,
+        );
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        setSession({ ...active, accessToken: response.accessToken });
+        return response.recoveryCodes;
+      });
     },
     [setSession],
   );
@@ -676,15 +686,20 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     async (codeType: MultiFactorCodeType, code: string) => {
       const active = sessionRef.current;
       if (!active) throw new Error("You are signed out.");
-      await apiRequest<void>(
-        "/api/auth/browser/mfa/totp/disable",
-        {
-          method: "POST",
-          body: JSON.stringify({ codeType, code }),
-        },
-        active,
-      );
-      setSession(null);
+      const boundarySequence = boundarySequenceRef.current;
+      await runWithBrowserSessionLock(async () => {
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        await apiRequest<void>(
+          "/api/auth/browser/mfa/totp/disable",
+          {
+            method: "POST",
+            body: JSON.stringify({ codeType, code }),
+          },
+          active,
+        );
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        setSession(null);
+      });
     },
     [setSession],
   );
