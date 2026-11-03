@@ -1073,6 +1073,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/step-up/mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MultiFactorStepUpRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuthTokensResponse"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/mfa": {
         parameters: {
             query?: never;
@@ -1647,6 +1693,52 @@ export interface paths {
                     content: {
                         "application/json": components["schemas"]["BrowserAuthResponse"];
                     };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/browser/step-up/mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BrowserMultiFactorStepUpRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrowserAuthResponse"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };
@@ -12950,6 +13042,11 @@ export interface components {
             accessToken: string | null;
             recoveryCodes: string[] | null;
         };
+        BrowserMultiFactorStepUpRequest: {
+            password: string | null;
+            codeType: components["schemas"]["MultiFactorCodeType"];
+            code: string | null;
+        };
         BrowserPasswordStepUpRequest: {
             password: string | null;
         };
@@ -14537,6 +14634,12 @@ export interface components {
             activatedAtUtc: string | null;
             /** Format: date-time */
             recoveryCodesRegeneratedAtUtc: string | null;
+        };
+        MultiFactorStepUpRequest: {
+            password: string | null;
+            codeType: components["schemas"]["MultiFactorCodeType"];
+            code: string | null;
+            refreshToken: string | null;
         };
         ObservationParserCapabilityDto: {
             parserType: string | null;
