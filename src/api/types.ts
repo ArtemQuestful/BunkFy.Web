@@ -1235,6 +1235,7 @@ export type MultiFactorChallenge = NonNullableFields<
   "challengeToken" | "availableCodeTypes"
 >;
 export type MultiFactorCodeType = Schema<"MultiFactorCodeType">;
+export type BrowserMultiFactorStepUpRequest = Schema<"BrowserMultiFactorStepUpRequest">;
 export type MultiFactorStatus = Schema<"MultiFactorStatusResponse">;
 export type TotpEnrollment = NonNullableFields<
   Schema<"TotpEnrollmentResponse">,

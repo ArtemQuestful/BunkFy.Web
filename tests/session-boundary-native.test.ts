@@ -18,7 +18,7 @@ import {SessionProvider,useSession} from "/src/app/session.tsx";
 import "/src/styles.css";
 function Capture(){
  const auth=useSession(),query=useQueryClient();
- useEffect(()=>{window.sessionHarness={adoptBrowserAccount:auth.adoptBrowserAccount,conceal:auth.concealForAccountTransition,selectWorkspace:auth.selectWorkspace,signOut:auth.logout,revokeAll:()=>{window.signOutAllOutcome="pending";void auth.logoutAll().then(()=>{window.signOutAllOutcome="accepted";}).catch(error=>{window.signOutAllOutcome=error.name;});},confirmCredential:(operation)=>{window.stepUpOutcome="pending";const pending=operation==="password"?auth.stepUpWithPassword("synthetic-password"):operation==="activate-totp"?auth.activateTotp("123456"):auth.disableTotp("totp","123456");void pending.then(value=>{window.stepUpResult=value;window.stepUpOutcome="accepted";}).catch(error=>{window.stepUpOutcome=error.name;});},setPrivate:(value="old-actor")=>query.setQueryData(["private"],value),hasPrivate:()=>query.getQueryData(["private"])??null};},[auth,query]);
+ useEffect(()=>{window.sessionHarness={adoptBrowserAccount:auth.adoptBrowserAccount,conceal:auth.concealForAccountTransition,selectWorkspace:auth.selectWorkspace,signOut:auth.logout,revokeAll:()=>{window.signOutAllOutcome="pending";void auth.logoutAll().then(()=>{window.signOutAllOutcome="accepted";}).catch(error=>{window.signOutAllOutcome=error.name;});},confirmCredential:(operation)=>{window.stepUpOutcome="pending";const pending=operation==="password"?auth.stepUpWithPassword("synthetic-password"):operation==="mfa-step-up"?auth.stepUpWithMultiFactor("synthetic-password","totp","123456"):operation==="activate-totp"?auth.activateTotp("123456"):auth.disableTotp("totp","123456");void pending.then(value=>{window.stepUpResult=value;window.stepUpOutcome="accepted";}).catch(error=>{window.stepUpOutcome=error.name;});},setPrivate:(value="old-actor")=>query.setQueryData(["private"],value),hasPrivate:()=>query.getQueryData(["private"])??null};},[auth,query]);
  return <main><output data-session>{auth.session?.username??"Signed out"}</output><output data-session-id>{auth.session?.sessionId??""}</output><output data-tenant>{auth.session?.tenantId??""}</output><output data-restoring>{auth.isRestoring?"restoring":"ready"}</output></main>;
 }
 const query=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
@@ -126,7 +126,7 @@ describe("native cross-tab remembered-session boundary", () => {
     }
   }, 30000);
 
-  it.each(["password", "activate-totp", "disable-totp"].flatMap(operation => ["replacement actor", "concealed session"].map(boundary => ({ operation, boundary }))))("rejects a late $operation completion after a $boundary boundary", async ({ operation, boundary }) => {
+  it.each(["password", "mfa-step-up", "activate-totp", "disable-totp"].flatMap(operation => ["replacement actor", "concealed session"].map(boundary => ({ operation, boundary }))))("rejects a late $operation completion after a $boundary boundary", async ({ operation, boundary }) => {
     const ownedContext = await browser.newContext();
     await ownedContext.addInitScript(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)), identityA);
     const pageA = await ownedContext.newPage();
@@ -136,7 +136,7 @@ describe("native cross-tab remembered-session boundary", () => {
     const heldResponse = new Promise<void>(resolve => { release = resolve; });
     await pageA.route("**/api/auth/browser/refresh", route => route.fulfill(response(token(started ? subjectB : subjectA, started ? sessionB : sessionA))));
     await pageB.route("**/api/auth/browser/refresh", route => route.fulfill(response(token(subjectA, sessionA))));
-    const endpoint = operation === "password" ? "step-up/password" : operation === "activate-totp" ? "mfa/totp/activate" : "mfa/totp/disable";
+    const endpoint = operation === "password" ? "step-up/password" : operation === "mfa-step-up" ? "step-up/mfa" : operation === "activate-totp" ? "mfa/totp/activate" : "mfa/totp/disable";
     await pageA.route("**/api/auth/browser/" + endpoint, async route => {
       started = true;
       await heldResponse;
@@ -175,11 +175,11 @@ describe("native cross-tab remembered-session boundary", () => {
   }, 30000);
 
 
-  it.each(["password", "activate-totp", "disable-totp"])("preserves the successful %s request and session result", async operation => {
+  it.each(["password", "mfa-step-up", "activate-totp", "disable-totp"])("preserves the successful %s request and session result", async operation => {
     const ownedContext = await browser.newContext();
     await ownedContext.addInitScript(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)), identityA);
     const page = await ownedContext.newPage();
-    const endpoint = operation === "password" ? "step-up/password" : operation === "activate-totp" ? "mfa/totp/activate" : "mfa/totp/disable";
+    const endpoint = operation === "password" ? "step-up/password" : operation === "mfa-step-up" ? "step-up/mfa" : operation === "activate-totp" ? "mfa/totp/activate" : "mfa/totp/disable";
     const writes: unknown[] = [];
     await page.route("**/api/auth/browser/refresh", route => route.fulfill(response(token(subjectA, sessionA))));
     await page.route("**/api/auth/browser/" + endpoint, async route => {
@@ -194,19 +194,19 @@ describe("native cross-tab remembered-session boundary", () => {
       await expect.poll(() => page.locator("[data-session]").textContent()).toBe(identityA.username);
       await page.evaluate(value => (window as unknown as { sessionHarness: { confirmCredential(operation: string): void } }).sessionHarness.confirmCredential(value), operation);
       await expect.poll(() => page.evaluate(() => (window as unknown as { stepUpOutcome?: string }).stepUpOutcome)).toBe("accepted");
-      expect(writes).toEqual([{ method: "POST", body: operation === "password" ? { password: "synthetic-password" } : operation === "activate-totp" ? { code: "123456" } : { codeType: "totp", code: "123456" } }]);
+      expect(writes).toEqual([{ method: "POST", body: operation === "password" ? { password: "synthetic-password" } : operation === "mfa-step-up" ? { password: "synthetic-password", codeType: "totp", code: "123456" } : operation === "activate-totp" ? { code: "123456" } : { codeType: "totp", code: "123456" } }]);
       expect(await page.locator("[data-session]").textContent()).toBe(operation === "disable-totp" ? "Signed out" : identityA.username);
       if (operation === "activate-totp") expect(await page.evaluate(() => (window as unknown as { stepUpResult?: unknown }).stepUpResult)).toEqual(["synthetic-recovery-code"]);
     } finally { await ownedContext.close(); }
   }, 30000);
 
-  it.each(["password", "activate-totp", "disable-totp"])("does not dispatch a queued %s operation after concealment", async operation => {
+  it.each(["password", "mfa-step-up", "activate-totp", "disable-totp"])("does not dispatch a queued %s operation after concealment", async operation => {
     const ownedContext = await browser.newContext();
     await ownedContext.addInitScript(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)), identityA);
     const page = await ownedContext.newPage();
     let writes = 0;
     await page.route("**/api/auth/browser/refresh", route => route.fulfill(response(token(subjectA, sessionA))));
-    const endpoint = operation === "password" ? "step-up/password" : operation === "activate-totp" ? "mfa/totp/activate" : "mfa/totp/disable";
+    const endpoint = operation === "password" ? "step-up/password" : operation === "mfa-step-up" ? "step-up/mfa" : operation === "activate-totp" ? "mfa/totp/activate" : "mfa/totp/disable";
     await page.route("**/api/auth/browser/" + endpoint, async route => { writes++; await route.fulfill(response(token(subjectA, sessionA))); });
     page.on("pageerror", error => runtimeErrors.push(error.message));
     page.on("console", message => { if (message.type() === "error") runtimeErrors.push(message.text()); });

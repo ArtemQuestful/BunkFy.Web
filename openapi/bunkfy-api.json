@@ -941,6 +941,38 @@
         }
       }
     },
+    "/api/auth/step-up/mfa": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MultiFactorStepUpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
     "/api/auth/mfa": {
       "get": {
         "tags": [
@@ -1360,6 +1392,38 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/auth/browser/step-up/mfa": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserMultiFactorStepUpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserAuthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         }
       }
@@ -16616,6 +16680,23 @@
         },
         "additionalProperties": false
       },
+      "BrowserMultiFactorStepUpRequest": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "nullable": true
+          },
+          "codeType": {
+            "$ref": "#/components/schemas/MultiFactorCodeType"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "BrowserPasswordStepUpRequest": {
         "type": "object",
         "properties": {
@@ -20906,6 +20987,27 @@
           "recoveryCodesRegeneratedAtUtc": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MultiFactorStepUpRequest": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "nullable": true
+          },
+          "codeType": {
+            "$ref": "#/components/schemas/MultiFactorCodeType"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "refreshToken": {
+            "type": "string",
             "nullable": true
           }
         },

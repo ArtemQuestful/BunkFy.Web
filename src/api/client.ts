@@ -2,6 +2,7 @@ import {
   assertRequestCanStart,
   networkRequestFailure,
 } from "./requestConnectivity";
+import { parseAuthenticationChallenge, type AuthenticationChallenge } from "./authenticationChallenge";
 
 export type ApiSession = {
   accessToken: string;
@@ -20,6 +21,7 @@ export class ApiError extends Error {
     public readonly code?: string,
     public readonly retryAfterMs?: number,
     public readonly referenceId?: string,
+    public readonly authenticationChallenge?: AuthenticationChallenge,
   ) {
     super(message);
     this.name = "ApiError";
@@ -152,6 +154,9 @@ async function toApiError(response: Response): Promise<ApiError> {
     code,
     parseRetryAfterMilliseconds(response.headers.get("retry-after")),
     referenceId,
+    response.status === 401 && code === "Security.InsufficientAuthentication"
+      ? parseAuthenticationChallenge(response.headers.get("www-authenticate"))
+      : undefined,
   );
 }
 

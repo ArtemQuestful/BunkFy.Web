@@ -20,6 +20,7 @@ import {
 import type {
   AuthenticationMethods,
   BrowserAuthResponse,
+  BrowserMultiFactorStepUpRequest,
   BrowserTotpActivation,
   ExternalAuthenticationChallenge,
   ExternalAuthenticationResult,
@@ -43,6 +44,7 @@ import {
   SessionIdentityMismatchError,
 } from "./sessionTokenIdentity";
 import { refreshFailureInvalidatesSession } from "./sessionRecovery";
+import { isInsufficientAuthenticationError } from "./authenticationAssurance";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   isMultiFactorChallenge,
@@ -101,6 +103,7 @@ type SessionContextValue = {
   adoptBrowserAccount: (account: ApiSession) => void;
   logoutAll: () => Promise<void>;
   stepUpWithPassword: (password: string) => Promise<void>;
+  stepUpWithMultiFactor: (password: string, codeType: MultiFactorCodeType, code: string) => Promise<void>;
   selectWorkspace: (workspaceId: string) => void;
   request: <T>(path: string, options?: RequestInit) => Promise<T>;
   download: (path: string, options?: RequestInit) => Promise<ApiDownload>;
@@ -427,6 +430,10 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
         assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
         return result;
       } catch (error) {
+        if (isInsufficientAuthenticationError(error)) {
+          assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+          throw error;
+        }
         if (
           !(error instanceof Error) ||
           !("status" in error) ||
@@ -595,6 +602,10 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
         assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
         return result;
       } catch (error) {
+        if (isInsufficientAuthenticationError(error)) {
+          assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+          throw error;
+        }
         if (
           !(error instanceof Error) ||
           !("status" in error) ||
@@ -621,6 +632,10 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
         assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
         return response;
       } catch (error) {
+        if (isInsufficientAuthenticationError(error)) {
+          assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+          throw error;
+        }
         if (
           !(error instanceof Error) ||
           !("status" in error) ||
@@ -651,6 +666,26 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
             method: "POST",
             body: JSON.stringify({ password }),
           },
+          active,
+        );
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        setSession({ ...active, accessToken: response.accessToken });
+      });
+    },
+    [setSession],
+  );
+
+  const stepUpWithMultiFactor = useCallback(
+    async (password: string, codeType: MultiFactorCodeType, code: string) => {
+      const active = sessionRef.current;
+      if (!active) throw new Error("You are signed out.");
+      const boundarySequence = boundarySequenceRef.current;
+      const body: BrowserMultiFactorStepUpRequest = { password, codeType, code };
+      await runWithBrowserSessionLock(async () => {
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        const response = await apiRequest<BrowserAuthResponse>(
+          "/api/auth/browser/step-up/mfa",
+          { method: "POST", body: JSON.stringify(body) },
           active,
         );
         assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
@@ -853,6 +888,7 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
       adoptBrowserAccount,
       logoutAll,
       stepUpWithPassword,
+      stepUpWithMultiFactor,
       selectWorkspace,
       request,
       download,
@@ -882,6 +918,7 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
       selectWorkspace,
       session,
       stepUpWithPassword,
+      stepUpWithMultiFactor,
       stream,
     ],
   );
