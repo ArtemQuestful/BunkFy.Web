@@ -17,10 +17,17 @@ concurrency:
 
 jobs:
   verify:
+    name: verify (${{ matrix.os }}, shard ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            shard: '1/1'
+          - os: windows-latest
+            shard: '1/2'
+          - os: windows-latest
+            shard: '2/2'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -51,16 +58,31 @@ jobs:
         if: runner.os == 'Windows'
         run: pnpm exec playwright install chromium
 
-      - name: Verify
-        run: pnpm verify
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        shell: pwsh
+        env:
+          VITEST_SHARD: ${{ matrix.shard }}
+        run: pnpm test --shard $env:VITEST_SHARD
+
+      - name: Build
+        run: pnpm build
 
       - name: Record Windows socket and memory state
         if: always() && runner.os == 'Windows'
         shell: pwsh
         run: |
           Get-CimInstance Win32_OperatingSystem |
-            Select-Object TotalVisibleMemorySize, FreePhysicalMemory
-          Get-NetTCPConnection | Group-Object State | Select-Object Name, Count
+            Select-Object TotalVisibleMemorySize, FreePhysicalMemory |
+            ConvertTo-Json -Compress
+          Get-NetTCPConnection | Group-Object State, OwningProcess |
+            Sort-Object Count -Descending | Select-Object -First 15 Name, Count |
+            ConvertTo-Json -Compress
           netsh int ipv4 show dynamicport tcp
 
   validate:
