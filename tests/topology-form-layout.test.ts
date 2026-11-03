@@ -1,7 +1,8 @@
+import { launchNativeChromium } from "./support/nativeChromium";
 import { createServer, normalizePath, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { chromium, type Browser, type Page } from "@playwright/test";
+import { type Browser, type Page } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,7 +57,7 @@ beforeAll(async () => {
       }); },
     }], server: {host:"127.0.0.1",port:0},
   });
-  await server.listen(); origin=server.resolvedUrls!.local[0]; browser=await chromium.launch({headless:true});
+  await server.listen(); origin=server.resolvedUrls!.local[0]; browser=await launchNativeChromium();
 },60000);
 afterAll(async()=>{await browser?.close();await server?.close();expect(runtimeErrors).toEqual([]);});
 async function open(width:number,query="") {

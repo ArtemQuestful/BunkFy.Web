@@ -1,7 +1,8 @@
+import { launchNativeChromium } from "./support/nativeChromium";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, normalizePath, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
-import { chromium, type Browser, type Page } from "@playwright/test";
+import { type Browser, type Page } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -80,7 +81,7 @@ beforeAll(async () => {
       }); },
     }], server: { host: "127.0.0.1", port: 0 },
   });
-  await nativeServer.listen(); nativeOrigin = nativeServer.resolvedUrls!.local[0]; nativeBrowser = await chromium.launch({ headless: true });
+  await nativeServer.listen(); nativeOrigin = nativeServer.resolvedUrls!.local[0]; nativeBrowser = await launchNativeChromium();
 }, 60000);
 afterAll(async () => { await nativeBrowser?.close(); await nativeServer?.close(); expect(nativeErrors).toEqual([]); });
 type ProbeState = { allowed: boolean; extraAllowed: boolean; hasData: boolean; fetching: boolean; loading: boolean; error: boolean };

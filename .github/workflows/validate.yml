@@ -17,17 +17,10 @@ concurrency:
 
 jobs:
   verify:
-    name: verify (${{ matrix.os }}, shard ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            shard: '1/1'
-          - os: windows-latest
-            shard: '1/2'
-          - os: windows-latest
-            shard: '2/2'
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -58,20 +51,8 @@ jobs:
         if: runner.os == 'Windows'
         run: pnpm exec playwright install chromium
 
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Test
-        shell: pwsh
-        env:
-          VITEST_SHARD: ${{ matrix.shard }}
-        run: pnpm test --shard $env:VITEST_SHARD
-
-      - name: Build
-        run: pnpm build
+      - name: Verify
+        run: pnpm verify
 
       - name: Record Windows socket and memory state
         if: always() && runner.os == 'Windows'
