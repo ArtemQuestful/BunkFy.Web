@@ -36,6 +36,7 @@ function Fixture(){
  useEffect(()=>{window.blockProtocolHarness={setCurrent};},[]);
  return <main data-blocks-region><h2>Inventory</h2><output data-session>{auth.session?"ready":"restoring"}</output><output data-restore-error>{auth.restorationError?.message}</output>
   <button disabled={!auth.session} onClick={event=>editor.openCreate(event.currentTarget)}>Add block</button>
+  <button type="button" data-unrelated-focus>Other work</button>
   <BlockMutationNotice notice={notice}/>
   <BlockInventoryModal inline editor={editor} initialRange={{arrival:"2026-11-05",departure:"2026-11-07"}}
    initialTargetId={groups?${JSON.stringify("room:" + roomId)}:${JSON.stringify("unit:" + unitId)}} sources={[]}/></main>;
@@ -71,7 +72,7 @@ beforeAll(async () => {
 }, 60000);
 afterAll(async () => { await browser?.close(); await server?.close(); expect(runtimeErrors).toEqual([]); });
 
-async function open(unit = false) {
+async function open(unit = false, holdPreview?: Promise<void>) {
   const context = await browser.newContext({ viewport: { width: 1024, height: 900 } });
   await context.addInitScript(identity => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(identity)),
     { tenantId: "synthetic-workspace", username: "fixture@example.test", subjectId, sessionId, generation: "fixture" });
@@ -97,6 +98,7 @@ async function open(unit = false) {
             releasedBlockCount: 0, createdBlockCount: 1, totalBlockCount: 1, activeBlockCount: 1, alreadyReleasedBlockCount: 0,
             membershipDigest: "b".repeat(64), resultBlockGroupId: groupId, releasedNowBlockCount: 0, createdNowBlockCount: 1 };
     }
+    if (path.endsWith("/preview")) await holdPreview;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(response) });
   });
   await page.goto(origin + "__block-protocol-native" + (unit ? "?unit=1" : ""));
@@ -144,6 +146,45 @@ describe("native shared block editor confirmation", () => {
       expect(await page.getByRole("textbox", { name: "Reason", exact: true }).inputValue()).toBe("Maintenance");
       expect(calls).toHaveLength(1);
     } finally { await context.close(); }
+  }, 30000);
+
+  it("does not take focus from a user who moves elsewhere while preview is pending", async () => {
+    let releasePreview!: () => void;
+    const held = new Promise<void>(resolve => { releasePreview = resolve; });
+    const { context, page, calls } = await open(false, held);
+    try {
+      await page.getByRole("button", { name: "Preview block", exact: true }).click();
+      await expect.poll(() => calls.length).toBe(1);
+      const other = page.getByRole("button", { name: "Other work", exact: true });
+      await other.focus();
+      releasePreview();
+      await page.locator("[data-block-preview]").waitFor();
+      expect(await other.evaluate(node => node === document.activeElement)).toBe(true);
+      await page.keyboard.press("Enter");
+      expect(calls).toHaveLength(1);
+    } finally { releasePreview(); await context.close(); }
+  }, 30000);
+
+  it("requires deliberate confirmation when the submit control retains focus across a fast preview", async () => {
+    let releasePreview!: () => void;
+    const held = new Promise<void>(resolve => { releasePreview = resolve; });
+    const { context, page, calls } = await open(false, held);
+    try {
+      const trigger = page.getByRole("button", { name: "Preview block", exact: true });
+      const button = await trigger.elementHandle();
+      await trigger.press("Enter");
+      await expect.poll(() => calls.length).toBe(1);
+      // Model a retained submit focus even if this Chromium build normally
+      // blurs disabled buttons. Keep the real form, transport and preview hook.
+      await button!.evaluate(node => { (node as HTMLButtonElement).disabled = false; (node as HTMLButtonElement).focus(); });
+      expect(await button!.evaluate(node => node === document.activeElement)).toBe(true);
+      releasePreview();
+      const review = page.locator("[data-block-preview]");
+      await review.waitFor();
+      await expect.poll(() => review.evaluate(node => node === document.activeElement)).toBe(true);
+      await page.keyboard.press("Enter"); await page.keyboard.press("Enter");
+      expect(calls).toHaveLength(1);
+    } finally { releasePreview(); await context.close(); }
   }, 30000);
 
   it("retains the individual unit command for a user without group management access", async () => {
