@@ -11,7 +11,7 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ApiError } from "../../api/client";
 import type {
@@ -56,7 +56,7 @@ export function JoinWorkspacePage() {
   const navigate = useNavigate();
   const { logout, request, selectWorkspace, session } = useSession();
   const {
-    refetchWorkspaces,
+    ensureWorkspaceVisible,
     setSelectedWorkspaceId,
     workspaces,
   } = useWorkspace();
@@ -64,6 +64,7 @@ export function JoinWorkspacePage() {
     parseWorkspaceJoinSecret(location.hash) ?? readPreservedWorkspaceJoinSecret();
   const secretKey = secret ? `${secret.kind}:${secret.token}` : "missing";
   const accountKey = session?.username ?? "";
+  const activationController = useRef<AbortController | null>(null);
   const isEnrollment = secret?.kind === "enrollment";
   const [staffProfile, setStaffProfile] = useState(() =>
     readInviteStaffDraft(session?.username),
@@ -252,6 +253,7 @@ export function JoinWorkspacePage() {
   const resetWithdraw = withdraw.reset;
 
   useEffect(() => {
+    activationController.current?.abort();
     setPendingApproval(
       secret?.kind === "enrollment" &&
         hasPendingEnrollment(secret.token, accountKey),
@@ -261,8 +263,11 @@ export function JoinWorkspacePage() {
     resetWithdraw();
     setWithdrawalConfirmation(false);
     setWithdrawalResolution(null);
+    return () => { activationController.current?.abort(); };
   }, [
     accountKey,
+    session?.subjectId,
+    session?.sessionId,
     resetWorkspaceActivation,
     resetJoin,
     resetWithdraw,
@@ -327,11 +332,22 @@ export function JoinWorkspacePage() {
   ]);
 
   async function activateWorkspace(workspaceId: string) {
-    selectWorkspace(workspaceId);
-    await waitForWorkspaceAccess(request, workspaceId);
-    await refetchWorkspaces();
-    setSelectedWorkspaceId(workspaceId);
-    clearInviteStaffDraft(accountKey);
+    // The catalogue may briefly lag provisioning. Keep the current scope until
+    // it contains the approved membership, then update selection and session
+    // together so catalogue reconciliation cannot restore the old workspace.
+    activationController.current?.abort();
+    const controller = new AbortController();
+    activationController.current = controller;
+    try {
+      await ensureWorkspaceVisible(workspaceId, controller.signal);
+      controller.signal.throwIfAborted();
+      setSelectedWorkspaceId(workspaceId);
+      await waitForWorkspaceAccess(request, workspaceId, { signal: controller.signal });
+      controller.signal.throwIfAborted();
+      clearInviteStaffDraft(accountKey);
+    } finally {
+      if (activationController.current === controller) activationController.current = null;
+    }
   }
 
   const alreadyJoined =
