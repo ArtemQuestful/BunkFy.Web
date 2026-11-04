@@ -145,6 +145,10 @@ describe("native shared block editor confirmation", () => {
       expect(await page.getByRole("button", { name: "Confirm block", exact: true }).isDisabled()).toBe(true);
       expect(await page.getByRole("textbox", { name: "Reason", exact: true }).inputValue()).toBe("Maintenance");
       expect(calls).toHaveLength(1);
+      await page.evaluate(() => (window as unknown as { blockProtocolHarness: { setCurrent(value: boolean): void } }).blockProtocolHarness.setCurrent(true));
+      await page.getByText("Your draft is kept.", { exact: false }).waitFor({ state: "hidden" });
+      expect(await page.getByRole("textbox", { name: "Reason", exact: true }).inputValue()).toBe("Maintenance");
+      expect(calls).toHaveLength(1);
     } finally { await context.close(); }
   }, 30000);
 
