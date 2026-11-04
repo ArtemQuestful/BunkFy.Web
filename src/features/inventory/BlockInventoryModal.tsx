@@ -1,5 +1,5 @@
 import { BedDouble, Building2, DoorOpen, Layers3, MapPinned, Search } from "lucide-react";
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { CompositeSource } from "../../app/compositeSourceState";
 import { isInsufficientAuthenticationError } from "../../app/authenticationAssurance";
 import { validStayDateRange, type StayDateRange } from "../../app/propertyDate";
@@ -67,6 +67,17 @@ function BlockInventoryForm({ editor, initialRange, initialTargetId, sources, in
   const payload = selected ? { target: selected.target, arrival, departure, reason } : null;
   const previewCurrent = Boolean(editor.mayManageGroups && payload && editor.reviewMatches(payload, selected));
   const preview = previewCurrent && editor.createReview ? presentManualBlockGroupPreview(editor.createReview.preview) : null;
+  const reviewElement = useRef<HTMLElement>(null);
+  const reviewFocusOrigin = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!previewCurrent || !editor.createReview || !reviewFocusOrigin.current) return;
+    const origin = reviewFocusOrigin.current;
+    reviewFocusOrigin.current = null;
+    // A fast response can leave the original submit button focused as its label
+    // becomes Confirm. Require a deliberate move from the read-only review,
+    // while respecting a user who moved focus elsewhere during the request.
+    if (document.activeElement === document.body || document.activeElement === origin) reviewElement.current?.focus();
+  }, [previewCurrent, editor.createReview]);
 
   function chooseKind(kind: BlockTargetKind) {
     setTargetKind(kind); setSearch("");
@@ -86,7 +97,13 @@ function BlockInventoryForm({ editor, initialRange, initialTargetId, sources, in
     event.preventDefault();
     if (!canSubmit || !selected || !reason.trim() || locked) return;
     if (editor.mayManageGroups && previewCurrent && preview?.canConfirm) editor.confirmCreate({ target: selected.target, arrival, departure, reason }, selected);
-    else editor.create({ target: selected.target, arrival, departure, reason }, selected);
+    else {
+      if (editor.mayManageGroups) {
+        reviewFocusOrigin.current = document.activeElement instanceof HTMLElement && event.currentTarget.contains(document.activeElement)
+          ? document.activeElement : null;
+      }
+      editor.create({ target: selected.target, arrival, departure, reason }, selected);
+    }
   }
 
   return <BlockEditorFrame inline={inline} title="Add block" description="Take a room, bed or area out of service."
@@ -152,7 +169,7 @@ function BlockInventoryForm({ editor, initialRange, initialTargetId, sources, in
           placeholder="Maintenance, private use, deep clean…" required disabled={locked} />
       </label>
       {reason.length > 0 && !reason.trim() && <p role="alert" className="text-sm text-error">Enter a reason, not only spaces.</p>}
-      {preview && <section role="status" data-block-preview data-feedback-focus className="rounded-lg border border-base-300 bg-base-200 p-4 text-sm">
+      {preview && <section ref={reviewElement} tabIndex={-1} role="status" data-block-preview data-feedback-focus className="rounded-lg border border-base-300 bg-base-200 p-4 text-sm outline-offset-2 focus:outline-2 focus:outline-primary">
         <h4 className="font-semibold">{preview.title}</h4><p className="mt-1">{preview.description}</p>
         <p className="mt-2 font-semibold">{preview.impactLabel}</p>
         {preview.canConfirm && <p className="mt-2">Confirm this exact target, dates, reason and server selection. Changes require another preview.</p>}

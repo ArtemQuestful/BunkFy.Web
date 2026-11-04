@@ -153,7 +153,6 @@ describe("shared editor source wiring (runtime review remains required)", () => 
   it("keeps local fields mounted through source refresh and avoids the old refresh reset", () => {
     const form = source("inventory/BlockInventoryModal.tsx");
     expect(form).toContain("key={editor.editor.editorSession}");
-    expect(form).not.toContain("useEffect");
     expect(form).toContain("No matching inventory");
     expect(form).toContain("Until must be after From");
     expect(form).toContain("Enter a reason, not only spaces");

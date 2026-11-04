@@ -336,11 +336,15 @@ describe.each(variants)("property processing $width embedded=$embedded", ({ widt
       const retry = await tabToRetry(page);
       await setRead(page, 503, true); await page.keyboard.press("Enter");
       await expect.poll(() => retry.isDisabled()).toBe(true);
+      // Disabled-button blur may lag the disabled DOM state. Exercise canceling
+      // the retained recovery intent after that native blur, on either platform.
+      await retry.evaluate(element => { if (element === document.activeElement) (element as HTMLElement).blur(); });
       await page.keyboard.press(key);
-      const focused = await page.evaluate(() => ({ tag: document.activeElement?.tagName, text: document.activeElement?.textContent }));
+      const focused = await page.evaluateHandle(() => document.activeElement);
       await page.evaluate(() => (window as unknown as FixtureWindow).releaseProcessing());
       await expect.poll(() => retry.isEnabled()).toBe(true);
-      expect(await page.evaluate(() => ({ tag: document.activeElement?.tagName, text: document.activeElement?.textContent }))).toEqual(focused);
+      expect(await focused.evaluate(element => element === document.activeElement)).toBe(true);
+      await focused.dispose();
       expect(await retry.evaluate(element => element === document.activeElement)).toBe(false);
       await noWritesOrOverflow(page);
     } finally { await page.close(); }
