@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, type ReactNode } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router";
 import { AppShell } from "../components/layout/AppShell";
 import { AuthPage } from "../features/auth/AuthPage";
 import { AuthCompletionPage } from "../features/auth/AuthCompletionPage";
@@ -8,7 +8,14 @@ import { NotificationsProvider } from "../features/notifications/notifications";
 import { useSession } from "./session";
 import { WorkspaceProvider, useWorkspace } from "./workspace";
 import { WorkspaceGate } from "../features/workspaces/WorkspaceGate";
-import { preserveWorkspaceJoinSecret } from "../features/workspaces/workspaceJoin";
+import {
+  parseWorkspaceJoinSecret,
+  prepareWorkspaceJoinContext,
+  preserveWorkspaceJoinContext,
+  readLegacyWorkspaceJoinSecret,
+} from "../features/workspaces/workspaceJoin";
+import { useQueryClient } from "@tanstack/react-query";
+import { clearLegacyPendingEnrollment } from "../features/workspaces/workspaceJoinPending";
 import {
   RenderErrorBoundary,
   RouteRenderFailure,
@@ -87,6 +94,14 @@ const WorkspaceSettingsPage = lazy(() =>
 
 export function App() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [joinPreparationError, setJoinPreparationError] = useState<string | null>(null);
+  const [joinPreparationRetry, setJoinPreparationRetry] = useState(0);
+  const hasIncomingJoin = location.pathname === "/join" && Boolean(
+    parseWorkspaceJoinSecret(location.hash) ?? readLegacyWorkspaceJoinSecret(),
+  );
+  useEffect(clearLegacyPendingEnrollment, []);
   const {
     abandonSessionRestore,
     isRestoring,
@@ -96,16 +111,36 @@ export function App() {
     session,
   } = useSession();
   useEffect(() => {
-    if (location.pathname !== "/join" || !preserveWorkspaceJoinSecret(location.hash)) return;
-    window.history.replaceState(
-      window.history.state,
-      "",
-      `${location.pathname}${location.search}`,
-    );
-  }, [location.hash, location.pathname, location.search]);
+    if (location.pathname !== "/join") return;
+    const incoming = parseWorkspaceJoinSecret(location.hash) ?? readLegacyWorkspaceJoinSecret();
+    if (!incoming) return;
+    let cancelled = false;
+    setJoinPreparationError(null);
+    void prepareWorkspaceJoinContext(incoming).then(({ context, preview }) => {
+      if (cancelled) return;
+      preserveWorkspaceJoinContext(context);
+      queryClient.setQueryData(["workspace-join-preview", context.kind, context.contextId], preview);
+      navigate(`${location.pathname}${location.search}`, { replace: true });
+    }).catch(error => {
+      if (!cancelled) setJoinPreparationError(error instanceof Error
+        ? error.message : "The invitation could not be prepared. Check your connection and try again.");
+    });
+    return () => { cancelled = true; };
+  }, [location.hash, location.pathname, location.search, navigate, queryClient, joinPreparationRetry]);
 
   if (location.pathname === "/auth/complete") {
     return <AuthCompletionPage />;
+  }
+  if (hasIncomingJoin) {
+    return <main className="grid min-h-screen place-items-center bg-base-200 p-6">
+      <section className="w-full max-w-lg rounded-lg border border-base-300 bg-base-100 p-7 shadow-sm">
+        <h1 className="font-display text-2xl font-semibold">Preparing your invitation</h1>
+        {joinPreparationError ? <>
+          <p role="alert" className="my-4 text-sm">{joinPreparationError}</p>
+          <button className="btn btn-primary" onClick={() => setJoinPreparationRetry(value => value + 1)}>Try again</button>
+        </> : <LoadingState label="Keep this page open while we prepare your invitation" />}
+      </section>
+    </main>;
   }
   if (restoringIdentity && (isRestoring || restorationError)) {
     return <SessionRecoveryPage

@@ -14443,6 +14443,231 @@
         }
       }
     },
+    "/api/workspace-join/{contextId}": {
+      "post": {
+        "tags": [
+          "Workspace Join"
+        ],
+        "parameters": [
+          {
+            "name": "contextId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-BunkFy-Join-Context",
+            "in": "header",
+            "description": "The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrepareWorkspaceJoinBrowserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceJoinBrowserContextDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Workspace Join"
+        ],
+        "parameters": [
+          {
+            "name": "contextId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-BunkFy-Join-Context",
+            "in": "header",
+            "description": "The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/workspace-join/{contextId}/preview": {
+      "post": {
+        "tags": [
+          "Workspace Join"
+        ],
+        "parameters": [
+          {
+            "name": "contextId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-BunkFy-Join-Context",
+            "in": "header",
+            "description": "The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The original Organizations response for the protected context's source kind.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/OrganizationInvitationPreviewDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OrganizationEnrollmentPreviewDto"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspace-join/{contextId}/applications": {
+      "post": {
+        "tags": [
+          "Workspace Join"
+        ],
+        "parameters": [
+          {
+            "name": "contextId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-BunkFy-Join-Context",
+            "in": "header",
+            "description": "The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceJoinStaffProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceStaffOnboardingDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspace-join/{contextId}/join": {
+      "post": {
+        "tags": [
+          "Workspace Join"
+        ],
+        "parameters": [
+          {
+            "name": "contextId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-BunkFy-Join-Context",
+            "in": "header",
+            "description": "The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The original Organizations response for the protected context's source kind.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/OrganizationInvitationAcceptanceDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OrganizationEnrollmentOutcomeDto"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspace-staff-enrollment/applications": {
       "post": {
         "tags": [
@@ -22191,6 +22416,21 @@
         },
         "additionalProperties": false
       },
+      "PrepareWorkspaceJoinBrowserRequest": {
+        "type": "object",
+        "properties": {
+          "sourceKind": {
+            "$ref": "#/components/schemas/WorkspaceStaffOnboardingSourceKind"
+          },
+          "token": {
+            "type": "string",
+            "format": "password",
+            "nullable": true,
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
       "PreviewManualBlockGroupRequest": {
         "type": "object",
         "properties": {
@@ -28130,6 +28370,53 @@
         "type": "integer",
         "format": "int32"
       },
+      "WorkspaceJoinBrowserContextDto": {
+        "type": "object",
+        "properties": {
+          "contextId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceKind": {
+            "$ref": "#/components/schemas/WorkspaceStaffOnboardingSourceKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkspaceJoinStaffProfileRequest": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "legalName": {
+            "type": "string",
+            "nullable": true
+          },
+          "workEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "workPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "employeeNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "jobTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "department": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "WorkspaceMemberAccessAssignmentDto": {
         "type": "object",
         "properties": {
@@ -28820,6 +29107,9 @@
     },
     {
       "name": "Workspace Access"
+    },
+    {
+      "name": "Workspace Join"
     },
     {
       "name": "Workspace Staff Enrollment"

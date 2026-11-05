@@ -5,6 +5,7 @@ import type {
   MultiFactorCodeType,
 } from "../../api/types";
 import { useSession } from "../../app/session";
+import { workspaceJoinAuthenticationDestination } from "../workspaces/workspaceJoin";
 import { BrandMark } from "../../components/ui/BrandMark";
 import { MultiFactorChallengeForm } from "./MultiFactorChallengeForm";
 import {
@@ -60,7 +61,7 @@ export function AuthCompletionPage() {
     )
       .then((completion) => {
         if (completion.kind === "redirect") {
-          window.location.replace(completion.destination);
+          window.location.replace(workspaceJoinAuthenticationDestination(completion.destination));
           return;
         }
         setMultiFactor({
@@ -96,7 +97,7 @@ export function AuthCompletionPage() {
         verificationCode,
         multiFactor.username,
       );
-      window.location.replace("/");
+      window.location.replace(workspaceJoinAuthenticationDestination("/"));
     } catch (cause) {
       setError(publicAuthenticationErrorMessage(
         cause,
@@ -135,7 +136,7 @@ export function AuthCompletionPage() {
               onSubmit={completeMultiFactor}
               onCancel={() => {
                 cancelExternalAuthentication();
-                window.location.replace("/");
+                window.location.replace(workspaceJoinAuthenticationDestination("/"));
               }}
             />
           </div>
