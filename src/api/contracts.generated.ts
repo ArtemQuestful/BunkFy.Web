@@ -11826,6 +11826,196 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace-join/{contextId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication. */
+                    "X-BunkFy-Join-Context": string;
+                };
+                path: {
+                    contextId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PrepareWorkspaceJoinBrowserRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkspaceJoinBrowserContextDto"];
+                    };
+                };
+            };
+        };
+        delete: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication. */
+                    "X-BunkFy-Join-Context": string;
+                };
+                path: {
+                    contextId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace-join/{contextId}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication. */
+                    "X-BunkFy-Join-Context": string;
+                };
+                path: {
+                    contextId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The original Organizations response for the protected context's source kind. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OrganizationInvitationPreviewDto"] | components["schemas"]["OrganizationEnrollmentPreviewDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace-join/{contextId}/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication. */
+                    "X-BunkFy-Join-Context": string;
+                };
+                path: {
+                    contextId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WorkspaceJoinStaffProfileRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkspaceStaffOnboardingDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace-join/{contextId}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description The public context ID must match the route. The HttpOnly context cookie is also required after preparation; it does not replace user authentication. */
+                    "X-BunkFy-Join-Context": string;
+                };
+                path: {
+                    contextId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The original Organizations response for the protected context's source kind. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OrganizationInvitationAcceptanceDto"] | components["schemas"]["OrganizationEnrollmentOutcomeDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace-staff-enrollment/applications": {
         parameters: {
             query?: never;
@@ -15073,6 +15263,11 @@ export interface components {
             expectedStaffVersion: number;
             reasonCode: string | null;
         };
+        PrepareWorkspaceJoinBrowserRequest: {
+            sourceKind: components["schemas"]["WorkspaceStaffOnboardingSourceKind"];
+            /** Format: password */
+            token: string | null;
+        };
         PreviewManualBlockGroupRequest: {
             target: components["schemas"]["InventoryBlockTarget"];
             /** Format: date */
@@ -17246,6 +17441,20 @@ export interface components {
          * @enum {integer}
          */
         WorkspaceAccessProfileStatus: 0 | 1 | 2;
+        WorkspaceJoinBrowserContextDto: {
+            /** Format: uuid */
+            contextId: string;
+            sourceKind: components["schemas"]["WorkspaceStaffOnboardingSourceKind"];
+        };
+        WorkspaceJoinStaffProfileRequest: {
+            displayName: string | null;
+            legalName: string | null;
+            workEmail: string | null;
+            workPhone: string | null;
+            employeeNumber: string | null;
+            jobTitle: string | null;
+            department: string | null;
+        };
         WorkspaceMemberAccessAssignmentDto: {
             /** Format: uuid */
             profileId: string;

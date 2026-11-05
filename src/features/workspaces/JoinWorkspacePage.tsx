@@ -11,8 +11,8 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useNavigate } from "react-router";
 import { ApiError } from "../../api/client";
 import type {
   AuthenticationMethods,
@@ -35,24 +35,27 @@ import {
 import { waitForWorkspaceAccess } from "./workspaceAccess";
 import { WorkspaceCatalogueNotice } from "./WorkspaceCatalogueNotice";
 import {
-  clearPreservedWorkspaceJoinSecret,
+  clearPreservedWorkspaceJoinContext,
   isWorkspaceStaffOnboardingExpired,
   isWorkspaceStaffOnboardingInProgress,
   isWorkspaceStaffOnboardingTerminallyDenied,
   isWorkspaceStaffOnboardingWithdrawn,
-  parseWorkspaceJoinSecret,
-  readPreservedWorkspaceJoinSecret,
+  readPreservedWorkspaceJoinContext,
   resolveEnrollmentJoin,
+  workspaceJoinContextPath,
+  workspaceJoinContextHeaders,
   workspaceJoinVerificationCopy,
   workspaceJoinSourceKind,
-  type WorkspaceJoinSecret,
+  type WorkspaceJoinContext,
   type WorkspaceJoinResolution,
 } from "./workspaceJoin";
-
-const PENDING_ENROLLMENT_KEY = "bunkfy.join.pending-enrollment.v2";
+import {
+  forgetPendingEnrollment,
+  hasPendingEnrollment,
+  rememberPendingEnrollment,
+} from "./workspaceJoinPending";
 
 export function JoinWorkspacePage() {
-  const location = useLocation();
   const navigate = useNavigate();
   const { logout, request, selectWorkspace, session } = useSession();
   const {
@@ -60,19 +63,26 @@ export function JoinWorkspacePage() {
     setSelectedWorkspaceId,
     workspaces,
   } = useWorkspace();
-  const secret: WorkspaceJoinSecret | null =
-    parseWorkspaceJoinSecret(location.hash) ?? readPreservedWorkspaceJoinSecret();
-  const secretKey = secret ? `${secret.kind}:${secret.token}` : "missing";
+  // Keep public metadata for the active page's terminal result after durable
+  // recovery and its protected cookie are cleared. No reusable token is held.
+  const [secret] = useState<WorkspaceJoinContext | null>(readPreservedWorkspaceJoinContext);
+  const secretKey = secret ? `${secret.kind}:${secret.contextId}` : "missing";
   const accountKey = session?.username ?? "";
+  const subjectId = session?.subjectId;
   const activationController = useRef<AbortController | null>(null);
+  const activeJoinPage = useRef(false);
+  useLayoutEffect(() => {
+    activeJoinPage.current = true;
+    return () => {
+      activeJoinPage.current = false;
+      activationController.current?.abort();
+    };
+  }, []);
   const isEnrollment = secret?.kind === "enrollment";
   const [staffProfile, setStaffProfile] = useState(() =>
     readInviteStaffDraft(session?.username),
   );
-  const [pendingApproval, setPendingApproval] = useState(() =>
-    secret?.kind === "enrollment" &&
-      hasPendingEnrollment(secret.token, accountKey),
-  );
+  const [pendingApproval, setPendingApproval] = useState(false);
   const [withdrawalConfirmation, setWithdrawalConfirmation] = useState(false);
   const [withdrawalResolution, setWithdrawalResolution] = useState<
     "withdrawn" | "expired" | null
@@ -80,24 +90,13 @@ export function JoinWorkspacePage() {
   const preview = useQuery<
     OrganizationInvitationPreview | OrganizationEnrollmentPreview
   >({
-    queryKey: ["workspace-join-preview", secret?.kind, secret?.token],
+    queryKey: ["workspace-join-preview", secret?.kind, secret?.contextId],
     queryFn: () => {
       if (!secret) throw new Error("This invitation link is incomplete.");
-      return secret.kind === "invitation"
-        ? request<OrganizationInvitationPreview>(
-            "/api/organization-invitations/preview",
-            {
-              method: "POST",
-              body: JSON.stringify({ token: secret.token }),
-            },
-          )
-        : request<OrganizationEnrollmentPreview>(
-            "/api/organization-enrollment/preview",
-            {
-              method: "POST",
-              body: JSON.stringify({ token: secret.token }),
-            },
-          );
+      return request<OrganizationInvitationPreview | OrganizationEnrollmentPreview>(
+        workspaceJoinContextPath(secret) + "/preview",
+        { method: "POST", headers: workspaceJoinContextHeaders(secret) },
+      );
     },
     enabled: Boolean(secret),
     retry: false,
@@ -110,12 +109,14 @@ export function JoinWorkspacePage() {
       ? (data as OrganizationInvitationPreview).invitationId
       : (data as OrganizationEnrollmentPreview).enrollmentLinkId
     : null;
+  const pendingSourceId = isEnrollment ? sourceId : null;
   const staffApplication = useQuery<WorkspaceStaffOnboarding>({
     queryKey: [
       "workspace-staff-onboarding",
       data?.organizationId,
       secret?.kind,
       sourceId,
+      subjectId,
       accountKey,
     ],
     queryFn: () => request<WorkspaceStaffOnboarding>(
@@ -137,9 +138,10 @@ export function JoinWorkspacePage() {
       return workspaceId;
     },
     onSuccess: () => {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      if (!activeJoinPage.current) return;
+      forgetPendingEnrollment(pendingSourceId, subjectId);
       setPendingApproval(false);
-      clearPreservedWorkspaceJoinSecret();
+      clearPreservedWorkspaceJoinContext(secret);
       window.history.replaceState(null, "", "/");
       navigate("/", { replace: true });
     },
@@ -149,12 +151,11 @@ export function JoinWorkspacePage() {
       if (!secret) throw new Error("This invitation link is incomplete.");
 
       await request<WorkspaceStaffOnboarding>(
-        "/api/workspace-staff-enrollment/applications",
+        workspaceJoinContextPath(secret) + "/applications",
         {
           method: "POST",
+          headers: workspaceJoinContextHeaders(secret),
           body: JSON.stringify({
-            sourceKind: workspaceJoinSourceKind(secret.kind),
-            token: secret.token,
             displayName: staffProfile.displayName.trim(),
             legalName: emptyToNull(staffProfile.legalName),
             workEmail: emptyToNull(staffProfile.workEmail),
@@ -168,29 +169,24 @@ export function JoinWorkspacePage() {
 
       if (secret.kind === "invitation") {
         const acceptance = await request<OrganizationInvitationAcceptance>(
-          "/api/organization-invitations/accept",
-          {
-            method: "POST",
-            body: JSON.stringify({ token: secret.token }),
-          },
+          workspaceJoinContextPath(secret) + "/join",
+          { method: "POST", headers: workspaceJoinContextHeaders(secret) },
         );
         const workspaceId = acceptance.membership.organization.organizationId;
         return { kind: "joined", workspaceId };
       }
 
       const outcome = await request<OrganizationEnrollmentOutcome>(
-        "/api/organization-enrollment/claim",
-        {
-          method: "POST",
-          body: JSON.stringify({ token: secret.token }),
-        },
+        workspaceJoinContextPath(secret) + "/join",
+        { method: "POST", headers: workspaceJoinContextHeaders(secret) },
       );
       const resolution = resolveEnrollmentJoin(outcome);
       return resolution;
     },
     onSuccess: (resolution) => {
+      if (!activeJoinPage.current) return;
       if (resolution.kind === "pending-approval") {
-        rememberPendingEnrollment(secret?.token, accountKey);
+        rememberPendingEnrollment(pendingSourceId, subjectId);
         setPendingApproval(true);
         void staffApplication.refetch();
         return;
@@ -199,11 +195,12 @@ export function JoinWorkspacePage() {
       workspaceActivation.mutate(resolution.workspaceId);
     },
     onError: (error) => {
+      if (!activeJoinPage.current) return;
       if (
         error instanceof ApiError &&
         error.code === "Organizations.EnrollmentClaimUnavailable"
       ) {
-        forgetPendingEnrollment(secret?.token, accountKey);
+        forgetPendingEnrollment(pendingSourceId, subjectId);
         setPendingApproval(false);
       }
     },
@@ -234,17 +231,19 @@ export function JoinWorkspacePage() {
       return outcome;
     },
     onSuccess: (outcome) => {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      if (!activeJoinPage.current) return;
+      forgetPendingEnrollment(pendingSourceId, subjectId);
       setPendingApproval(false);
       setWithdrawalConfirmation(false);
       setWithdrawalResolution(
         outcome.claim.status === "expired" ? "expired" : "withdrawn",
       );
-      clearPreservedWorkspaceJoinSecret();
+      clearPreservedWorkspaceJoinContext(secret);
       window.history.replaceState(null, "", "/join");
       void staffApplication.refetch();
     },
     onError: () => {
+      if (!activeJoinPage.current) return;
       void staffApplication.refetch();
     },
   });
@@ -254,10 +253,7 @@ export function JoinWorkspacePage() {
 
   useEffect(() => {
     activationController.current?.abort();
-    setPendingApproval(
-      secret?.kind === "enrollment" &&
-        hasPendingEnrollment(secret.token, accountKey),
-    );
+    setPendingApproval(hasPendingEnrollment(pendingSourceId, subjectId));
     resetJoin();
     resetWorkspaceActivation();
     resetWithdraw();
@@ -266,13 +262,14 @@ export function JoinWorkspacePage() {
     return () => { activationController.current?.abort(); };
   }, [
     accountKey,
-    session?.subjectId,
+    subjectId,
+    pendingSourceId,
     session?.sessionId,
     resetWorkspaceActivation,
     resetJoin,
     resetWithdraw,
     secret?.kind,
-    secret?.token,
+    secret?.contextId,
     secretKey,
   ]);
 
@@ -283,19 +280,19 @@ export function JoinWorkspacePage() {
     if (withdrawalResolution) return;
 
     if (isWorkspaceStaffOnboardingWithdrawn(application.status)) {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      forgetPendingEnrollment(pendingSourceId, subjectId);
       setPendingApproval(false);
       setWithdrawalResolution("withdrawn");
-      clearPreservedWorkspaceJoinSecret();
+      clearPreservedWorkspaceJoinContext(secret);
       window.history.replaceState(null, "", "/join");
       return;
     }
 
     if (isWorkspaceStaffOnboardingExpired(application.status)) {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      forgetPendingEnrollment(pendingSourceId, subjectId);
       setPendingApproval(false);
       setWithdrawalResolution("expired");
-      clearPreservedWorkspaceJoinSecret();
+      clearPreservedWorkspaceJoinContext(secret);
       window.history.replaceState(null, "", "/join");
       return;
     }
@@ -306,9 +303,9 @@ export function JoinWorkspacePage() {
     }
 
     if (isWorkspaceStaffOnboardingTerminallyDenied(application.status)) {
-      forgetPendingEnrollment(secret?.token, accountKey);
+      forgetPendingEnrollment(pendingSourceId, subjectId);
       setPendingApproval(false);
-      clearPreservedWorkspaceJoinSecret();
+      clearPreservedWorkspaceJoinContext(secret);
       return;
     }
 
@@ -324,9 +321,10 @@ export function JoinWorkspacePage() {
       workspaceActivation.mutate(application.organizationId);
     }
   }, [
-    accountKey,
+    subjectId,
+    pendingSourceId,
     workspaceActivation,
-    secret?.token,
+    secret?.contextId,
     staffApplication.data,
     withdrawalResolution,
   ]);
@@ -396,12 +394,12 @@ export function JoinWorkspacePage() {
       selectWorkspace(workspaceId);
       setSelectedWorkspaceId(workspaceId);
     }
-    clearPreservedWorkspaceJoinSecret();
+    clearPreservedWorkspaceJoinContext(secret);
     navigate("/", { replace: true });
   }
 
   function leaveJoin() {
-    clearPreservedWorkspaceJoinSecret();
+    clearPreservedWorkspaceJoinContext(secret);
     navigate("/", { replace: true });
   }
 
@@ -900,40 +898,13 @@ function JoinContextRow({
 }
 
 function joinApprovalLabel(
-  secret: WorkspaceJoinSecret | null,
+  secret: WorkspaceJoinContext | null,
   preview: OrganizationInvitationPreview | OrganizationEnrollmentPreview,
 ): string {
   if (secret?.kind !== "enrollment") return "Immediate after account checks";
   return (preview as OrganizationEnrollmentPreview).approvalMode === "automatic"
     ? "Automatic after account checks"
     : "Workspace owner review required";
-}
-
-function hasPendingEnrollment(token: string, identity: string): boolean {
-  return window.sessionStorage.getItem(pendingEnrollmentKey(identity)) === token;
-}
-
-function rememberPendingEnrollment(
-  token: string | undefined,
-  identity: string,
-): void {
-  if (token) {
-    window.sessionStorage.setItem(pendingEnrollmentKey(identity), token);
-  }
-}
-
-function forgetPendingEnrollment(
-  token: string | undefined,
-  identity: string,
-): void {
-  if (token && hasPendingEnrollment(token, identity)) {
-    window.sessionStorage.removeItem(pendingEnrollmentKey(identity));
-  }
-}
-
-function pendingEnrollmentKey(identity: string): string {
-  const account = identity.trim().toLowerCase() || "anonymous";
-  return `${PENDING_ENROLLMENT_KEY}:${encodeURIComponent(account)}`;
 }
 
 function emptyToNull(value: string): string | null {
