@@ -67,6 +67,54 @@ beforeAll(async () => {
 afterAll(async () => { await browser?.close(); await server?.close(); });
 
 describe("native workspace activation with existing workspace selection", () => {
+  it.each([false, true])("opens an accepted invitation after its own workspace switch, existing workspace=%s", async existingWorkspace => {
+    const context = await browser.newContext();
+    await context.addInitScript(value => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(value)),
+      { ...identity, tenantId: existingWorkspace ? homeId : "global" });
+    const page = await context.newPage();
+    const contexts = new Map<string, { sourceKind: number }>();
+    let accepted = false;
+    let acceptanceCount = 0;
+    const requests: { path: string; tenant: string | undefined }[] = [];
+    await page.route(url => url.pathname.startsWith("/api/"), async route => {
+      const path = await resolveJoinTransport(route, contexts);
+      if (path === null) return;
+      requests.push({ path, tenant: route.request().headers()["x-tenant-id"] });
+      let status = 200;
+      let body: unknown;
+      if (path === "/api/auth/browser/refresh") body = { accessToken: token };
+      else if (path === "/api/organizations") body = {
+        items: [...(existingWorkspace ? [membership(homeId)] : []), ...(accepted ? [membership(targetId)] : [])],
+        page: 1, pageSize: 100, hasMore: false,
+      };
+      else if (path === "/api/organization-invitations/preview") {
+        // Tenant activation removes the old scoped preview query. Give its
+        // replacement a real async interval; its absence is not a new source.
+        if (accepted) await new Promise(resolve => setTimeout(resolve, 100));
+        body = { organizationId: targetId, organizationName: "Target", organizationSlug: "target",
+          invitationId: sourceId, expiresAtUtc: "2027-01-01T00:00:00Z", recipientBound: false };
+      } else if (path === "/api/workspace-staff-enrollment/applications") body = { organizationId: targetId, applicationId: "application", status: 1 };
+      else if (path === "/api/organization-invitations/accept") {
+        accepted = true;
+        acceptanceCount++;
+        body = { membership: membership(targetId) };
+      } else if (path === "/api/properties") body = { properties: [], page: 1, pageSize: 100, hasMore: false };
+      else { status = 500; body = { code: "Test.UnexpectedRoute" }; }
+      await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    });
+    try {
+      await page.goto(origin + "join#invitation=synthetic-accepted-invitation");
+      await page.getByRole("button", { name: "Join workspace", exact: true }).click();
+      await page.getByRole("navigation", { name: "Main navigation" }).waitFor({ timeout: 5000 });
+      expect(acceptanceCount).toBe(1);
+      expect(await page.locator("[data-tenant]").textContent()).toBe(targetId);
+      expect(await page.locator("[data-selected]").textContent()).toBe(targetId);
+      expect(new URL(page.url()).pathname).toBe("/");
+      expect(requests.some(value => value.path === "/api/properties" && value.tenant === targetId)).toBe(true);
+      expect(requests.length).toBeLessThan(30);
+    } finally { await context.close(); }
+  }, 30000);
+
   it.each(["invitation", "enrollment", "legacy", "retry"] as const)("prepares %s custody in the actual app before sign-in", async scenario => {
     const context = await browser.newContext();
     const credential = "synthetic-app-bootstrap-credential";

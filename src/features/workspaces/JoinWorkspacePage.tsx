@@ -260,6 +260,9 @@ export function JoinWorkspacePage() {
   const resetWorkspaceActivation = workspaceActivation.reset;
   const resetWithdraw = withdraw.reset;
 
+  // The protected context identifies an invitation's source. Activating its
+  // workspace evicts scoped preview data; that temporary gap must not cancel
+  // this page's own activation. Actor, session and context changes still reset.
   useEffect(() => {
     activationController.current?.abort();
     setPendingApproval(hasPendingEnrollment(pendingSourceId, subjectId));
@@ -277,7 +280,6 @@ export function JoinWorkspacePage() {
     resetWorkspaceActivation,
     resetJoin,
     resetWithdraw,
-    sourceId,
     secret?.kind,
     secret?.contextId,
     secretKey,
