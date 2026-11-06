@@ -192,8 +192,10 @@ export function InventoryPage() {
   const targetRoomId = searchParams.get("room")
     ?? rooms.find((room) => room.units.some((unit) => unit.inventoryUnitId === targetUnitId))?.roomId
     ?? null;
+  const requestedRoomMissing = Boolean(targetRoomId && inventoryUsable && !inventoryContextMismatch
+    && !rooms.some((room) => room.roomId === targetRoomId));
   const targetBlockGroupId = searchParams.get("blockGroup");
-  const focusedTargetReady = targetBlockGroupId ? blocksUsable : inventoryUsable;
+  const focusedTargetReady = targetBlockGroupId ? blocksUsable : inventoryUsable && !requestedRoomMissing;
   const focusedResourceId = useTransientResourceFocus(focusedTargetReady);
   const focusedRoomId = focusedResourceId && (
     focusedResourceId === targetRoomId ||
@@ -312,6 +314,9 @@ export function InventoryPage() {
       />
 
       <CompositeSourceNotice sources={primarySources} title="Some inventory data is delayed" />
+      {requestedRoomMissing && <div role="status" className="mb-4 space-y-2 rounded-lg border border-base-300 bg-base-100 p-4 text-sm">
+        <p>The requested room is not in the current inventory. It may still be updating. Refresh to check again.</p>
+      </div>}
       <BlockMutationNotice notice={blockEditor.notice} />
       <SalesModeNotice notice={salesEditor.notice} />
 
@@ -336,11 +341,17 @@ export function InventoryPage() {
           canEditRoom={salesEditor.canOpen}
           pending={salesEditor.busy || Boolean(salesEditor.target)}
           onEdit={(room, trigger) => salesEditor.open(room, trigger, searchParams)}
+          mayRefresh={mayReadCurrent}
+          refreshing={inventory.isFetching || availability.isFetching}
+          onRefresh={() => {
+            if (!mayReadCurrent || inventory.isFetching || availability.isFetching) return;
+            void Promise.all([inventory.refetch(), ...(validStayDateRange(range) ? [availability.refetch()] : [])]);
+          }}
         />
 
         <ManualBlockGroupDirectory key={`${sessionIdentityKey(session)}:${selectedPropertyId}`}
           propertyId={selectedPropertyId} propertyName={selectedProperty.name} propertyTimeZoneId={propertyTimeZoneId}
-          rooms={rooms} mayReadCurrent={mayReadCurrent} mayManage={canManageGroups}
+          rooms={rooms} mayReadCurrent={mayReadCurrent} mayManage={canManageGroups} mayManageIndividual={canManageBlocks}
           sources={[permissionSource, propertySource, inventorySource, blockSource]} focusedBlockGroupId={focusedBlockGroupId} />
       </div>
 
@@ -437,6 +448,9 @@ function SalesSetupSection({
   canEditRoom,
   pending,
   onEdit,
+  mayRefresh,
+  refreshing,
+  onRefresh,
 }: {
   rooms: RoomInventory[];
   state: CompositeSourceState;
@@ -446,11 +460,16 @@ function SalesSetupSection({
   canEditRoom: (room: RoomInventory) => boolean;
   pending: boolean;
   onEdit: (room: RoomInventory, trigger: HTMLElement) => void;
+  mayRefresh: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
 }) {
   return (
     <section data-sales-region className="card border border-base-300 bg-base-100 shadow-sm">
-      <div className="border-b border-base-300 px-5 py-5 sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 px-5 py-5 sm:px-6">
         <h2 className="font-display text-xl font-semibold">Sales setup</h2>
+        <button type="button" className="btn btn-outline btn-sm" disabled={!mayRefresh || refreshing || pending}
+          onClick={onRefresh}>Refresh room inventory</button>
       </div>
       {!compositeSourceUsable(state) ? (
         <CompositeSourceFallback state={state} label="sales setup" />

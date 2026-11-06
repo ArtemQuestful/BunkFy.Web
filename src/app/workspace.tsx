@@ -15,6 +15,7 @@ import type {
 } from "../api/types";
 import { loadAllProperties } from "../features/properties/propertiesApi";
 import { reconcileSelectedWorkspaceId } from "../features/workspaces/workspaceCatalogue";
+import { waitForWorkspaceMembership } from "../features/workspaces/workspaceAccess";
 import { loadAllWorkspaces } from "../features/workspaces/workspacesApi";
 import { useSession } from "./session";
 import { useProductCapabilities } from "./productCapabilities";
@@ -31,6 +32,7 @@ type WorkspaceValue = {
   selectedWorkspaceId: string;
   setSelectedWorkspaceId: (id: string) => void;
   refetchWorkspaces: () => Promise<void>;
+  ensureWorkspaceVisible: (workspaceId: string, signal?: AbortSignal) => Promise<void>;
   properties: Property[];
   propertiesLoaded: boolean;
   propertiesLoading: boolean;
@@ -62,6 +64,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     queryFn: (context) => loadAllWorkspaces(request, context.signal),
   });
   const workspaces = workspacesQuery.data ?? [];
+  const refetchWorkspaceCatalogue = workspacesQuery.refetch;
+  const ensureWorkspaceVisible = useCallback(
+    (workspaceId: string, signal?: AbortSignal) => waitForWorkspaceMembership(async () => {
+      const result = await refetchWorkspaceCatalogue({ throwOnError: true });
+      return result.data ?? [];
+    }, workspaceId, { signal }),
+    [refetchWorkspaceCatalogue],
+  );
   const workspaceCatalogueCurrent = Boolean(
     workspacesQuery.data !== undefined &&
       !workspacesQuery.error &&
@@ -154,6 +164,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refetchWorkspaces: async () => {
         await workspacesQuery.refetch({ throwOnError: true });
       },
+      ensureWorkspaceVisible,
       properties,
       propertiesLoaded: propertiesQuery.data !== undefined,
       propertiesLoading: propertiesQuery.isLoading,
@@ -196,6 +207,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       workspacesQuery.isFetching,
       workspacesQuery.isLoading,
       workspacesQuery.refetch,
+      ensureWorkspaceVisible,
     ],
   );
 

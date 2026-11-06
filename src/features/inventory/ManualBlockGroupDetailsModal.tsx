@@ -10,6 +10,8 @@ import { canAdvanceCursor, initialCursorPage, nextCursorPage, previousCursorPage
 import { buildBlockTargetOptions, findBlockTargetOption } from "./inventoryBlocking";
 import { getManualBlockGroup, loadManualBlockGroupMemberPage, MANUAL_BLOCK_GROUP_PAGE_SIZE } from "./inventoryApi";
 import { manualBlockGroupStatusLabel, manualBlockGroupTargetLabel } from "./manualBlockGroupWorkflow";
+import { BlockReleaseForm } from "./BlockReleaseForm";
+import { useManualBlockEditor } from "./useManualBlockEditor";
 
 export function ManualBlockGroupDetailsModal({
   blockGroupId,
@@ -17,6 +19,7 @@ export function ManualBlockGroupDetailsModal({
   propertyName,
   rooms,
   canManage,
+  canManageIndividual,
   onReplace,
   onRelease,
   onNavigateGroup,
@@ -27,6 +30,7 @@ export function ManualBlockGroupDetailsModal({
   propertyName: string;
   rooms: RoomInventory[];
   canManage: boolean;
+  canManageIndividual: boolean;
   onReplace: (group: ManualBlockGroup) => void;
   onRelease: (group: ManualBlockGroup) => void;
   onNavigateGroup: (blockGroupId: string) => void;
@@ -78,6 +82,9 @@ export function ManualBlockGroupDetailsModal({
           memberPageSize={members.data?.pageSize ?? MANUAL_BLOCK_GROUP_PAGE_SIZE}
           nextMemberCursor={members.data?.nextCursor ?? null}
           canManage={canManage && !group.isFetching && !group.error && !members.isFetching && !members.error}
+          canManageIndividual={canManageIndividual && !group.isFetching && !group.error && !members.isFetching && !members.error}
+          propertyName={propertyName}
+          rooms={rooms}
           onMemberPageChange={(page) => setMemberPage((current) => page > current.page
             ? nextCursorPage(current, members.data?.nextCursor ?? null)
             : previousCursorPage(current))}
@@ -103,6 +110,9 @@ function GroupDetails({
   memberPageSize,
   nextMemberCursor,
   canManage,
+  canManageIndividual,
+  propertyName,
+  rooms,
   onMemberPageChange,
   onRetryMembers,
   onReplace,
@@ -120,6 +130,9 @@ function GroupDetails({
   memberPageSize: number;
   nextMemberCursor: string | null;
   canManage: boolean;
+  canManageIndividual: boolean;
+  propertyName: string;
+  rooms: RoomInventory[];
   onMemberPageChange: (page: number) => void;
   onRetryMembers: () => void;
   onReplace: () => void;
@@ -128,6 +141,8 @@ function GroupDetails({
   onClose: () => void;
 }) {
   const open = group.status === 1 || group.status === 2;
+  const [individual, setIndividual] = useState<{ blockId: string; trigger: HTMLElement } | null>(null);
+  const selectedMember = members.find(member => member.blockId === individual?.blockId);
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -186,7 +201,16 @@ function GroupDetails({
                       <span className="block truncate font-semibold">{resolved?.unitLabel ?? `Unit ${shortId(member.inventoryUnitId)}`}</span>
                       <span className="mt-0.5 block truncate text-xs text-base-content/50">{resolved?.roomName ?? `Inventory ID ${shortId(member.inventoryUnitId)}`}</span>
                     </span>
-                    <StatusBadge status={capitalize(manualBlockStatusLabel(member.status))} />
+                    <div className="flex shrink-0 items-center gap-2">
+                      <StatusBadge status={capitalize(manualBlockStatusLabel(member.status))} />
+                      {canManageIndividual && manualBlockStatusLabel(member.status) === "active" && (
+                        <button type="button" className="btn btn-ghost btn-sm text-primary"
+                          disabled={individual !== null}
+                          onClick={event => setIndividual({ blockId: member.blockId, trigger: event.currentTarget })}>
+                          <Unlock size={15} />Release {resolved?.unitLabel ?? `unit ${shortId(member.inventoryUnitId)}`}
+                        </button>
+                      )}
+                    </div>
                   </li>
                 );
               })}
@@ -202,6 +226,11 @@ function GroupDetails({
           </>
         ) : <p className="px-4 py-8 text-center text-sm text-base-content/50">No persisted members were returned.</p>}
       </section>
+
+      {individual && <IndividualBlockRelease key={individual.blockId}
+        member={selectedMember} propertyId={group.propertyId} propertyName={propertyName} rooms={rooms}
+        authorityCurrent={canManageIndividual} trigger={individual.trigger}
+        onCompleted={() => { setIndividual(null); onRetryMembers(); }} onClose={() => setIndividual(null)} />}
 
       <section className="grid gap-3 text-xs text-base-content/55 sm:grid-cols-2">
         <p><span className="font-semibold text-base-content/75">Created:</span> {formatTimestamp(group.createdAtUtc)} by {group.createdByActorId || "unknown actor"}</p>
@@ -220,6 +249,26 @@ function GroupDetails({
       </ModalActions>
     </div>
   );
+}
+
+function IndividualBlockRelease({ member, propertyId, propertyName, rooms, authorityCurrent, trigger, onCompleted, onClose }: {
+  member: ManualBlock | undefined; propertyId: string; propertyName: string; rooms: RoomInventory[];
+  authorityCurrent: boolean; trigger: HTMLElement; onCompleted: () => void; onClose: () => void;
+}) {
+  const editor = useManualBlockEditor({ propertyId, propertyName, rooms, blocks: member ? [member] : [],
+    mayManage: authorityCurrent, mayManageGroups: false,
+    evidence: { permissionsCurrent: authorityCurrent, propertyCurrent: authorityCurrent, inventoryCurrent: authorityCurrent, blocksCurrent: authorityCurrent },
+    onSuccess: onCompleted });
+  const [opened, setOpened] = useState(false);
+  useEffect(() => {
+    if (opened) return;
+    if (!member || !authorityCurrent) { onClose(); return; }
+    const unit = rooms.flatMap(room => room.units).find(unit => unit.inventoryUnitId === member.inventoryUnitId);
+    editor.openRelease(member.blockGroupId, unit?.label ?? "inventory unit", "Release only this selected inventory unit.", trigger);
+    setOpened(true);
+  }, [opened, member, authorityCurrent, rooms, editor, trigger, onClose]);
+  useEffect(() => { if (opened && !editor.editor) onClose(); }, [opened, editor.editor, onClose]);
+  return <BlockReleaseForm editor={editor} />;
 }
 
 function DetailValue({ label, value }: { label: string; value: string }) {

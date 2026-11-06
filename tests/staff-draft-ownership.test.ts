@@ -81,13 +81,4 @@ describe("authenticated invitation draft ownership", () => {
     expect(drafts.readInviteStaffDraft(subjectA)).toEqual(drafts.defaultStaffProfile());
   });
 
-  it("keeps and clears the primary join intent when browser storage is unavailable", async () => {
-    const join = await import("../src/features/workspaces/workspaceJoin");
-    const blocked = () => { throw new DOMException("Storage blocked", "SecurityError"); };
-    vi.stubGlobal("window", { sessionStorage: { getItem: blocked, setItem: blocked, removeItem: blocked } });
-    expect(join.preserveWorkspaceJoinSecret("#invitation=synthetic-token")).toEqual({ kind: "invitation", token: "synthetic-token" });
-    expect(join.readPreservedWorkspaceJoinSecret()).toEqual({ kind: "invitation", token: "synthetic-token" });
-    expect(() => join.clearPreservedWorkspaceJoinSecret()).not.toThrow();
-    expect(join.readPreservedWorkspaceJoinSecret()).toBeNull();
-  });
 });

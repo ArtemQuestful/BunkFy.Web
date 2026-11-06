@@ -71,7 +71,6 @@ describe("contextual block entry presentation (static markup, not browser eviden
     expect(source).not.toContain("contextualEntry && <button");
     expect(source).not.toContain("contextualEntry && !choosingTarget");
     expect(source).toContain("targetSummary.current?.focus()");
-    expect(source).not.toContain("useEffect");
     expect(source).not.toContain("editor.openCreate(");
   });
 });

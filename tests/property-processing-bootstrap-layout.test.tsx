@@ -1,7 +1,8 @@
+import { launchNativeChromium } from "./support/nativeChromium";
 import { createServer, normalizePath, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { chromium, type Browser, type Page } from "@playwright/test";
+import { type Browser, type Page } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -81,7 +82,7 @@ beforeAll(async () => {
       }); },
     }], server: { host: "127.0.0.1", port: 0 },
   });
-  await server.listen(); origin = server.resolvedUrls!.local[0]; browser = await chromium.launch({ headless: true });
+  await server.listen(); origin = server.resolvedUrls!.local[0]; browser = await launchNativeChromium();
 }, 60000);
 afterAll(async () => { await browser?.close(); await server?.close(); expect(runtimeErrors).toEqual([]); });
 
@@ -335,11 +336,15 @@ describe.each(variants)("property processing $width embedded=$embedded", ({ widt
       const retry = await tabToRetry(page);
       await setRead(page, 503, true); await page.keyboard.press("Enter");
       await expect.poll(() => retry.isDisabled()).toBe(true);
+      // Disabled-button blur may lag the disabled DOM state. Exercise canceling
+      // the retained recovery intent after that native blur, on either platform.
+      await retry.evaluate(element => { if (element === document.activeElement) (element as HTMLElement).blur(); });
       await page.keyboard.press(key);
-      const focused = await page.evaluate(() => ({ tag: document.activeElement?.tagName, text: document.activeElement?.textContent }));
+      const focused = await page.evaluateHandle(() => document.activeElement);
       await page.evaluate(() => (window as unknown as FixtureWindow).releaseProcessing());
       await expect.poll(() => retry.isEnabled()).toBe(true);
-      expect(await page.evaluate(() => ({ tag: document.activeElement?.tagName, text: document.activeElement?.textContent }))).toEqual(focused);
+      expect(await focused.evaluate(element => element === document.activeElement)).toBe(true);
+      await focused.dispose();
       expect(await retry.evaluate(element => element === document.activeElement)).toBe(false);
       await noWritesOrOverflow(page);
     } finally { await page.close(); }

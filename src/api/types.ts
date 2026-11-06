@@ -116,6 +116,13 @@ export type WorkspaceStaffOnboardingListResponse = Omit<
   items: WorkspaceStaffOnboarding[];
 };
 
+export type WorkspaceStaffOnboardingSummary = Schema<"WorkspaceStaffOnboardingActionableSummaryDto">;
+export type WorkspaceStaffOnboardingSummaryListResponse = NonNullableFields<
+  Schema<"WorkspaceStaffOnboardingSummaryListResponse">,
+  "items"
+>;
+export type WorkspaceStaffOnboardingRecoveryAttempt = Schema<"WorkspaceStaffOnboardingRecoveryAttemptDto">;
+
 export type WorkspaceAccessPermission = Omit<
   NonNullableFields<
     Schema<"WorkspaceAccessPermissionDto">,
@@ -1235,6 +1242,7 @@ export type MultiFactorChallenge = NonNullableFields<
   "challengeToken" | "availableCodeTypes"
 >;
 export type MultiFactorCodeType = Schema<"MultiFactorCodeType">;
+export type BrowserMultiFactorStepUpRequest = Schema<"BrowserMultiFactorStepUpRequest">;
 export type MultiFactorStatus = Schema<"MultiFactorStatusResponse">;
 export type TotpEnrollment = NonNullableFields<
   Schema<"TotpEnrollmentResponse">,

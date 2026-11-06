@@ -1,7 +1,8 @@
+import { launchNativeChromium } from "./support/nativeChromium";
 import { createServer, normalizePath, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { chromium, type Browser, type Page } from "@playwright/test";
+import { type Browser, type Page } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -107,7 +108,7 @@ beforeAll(async () => {
       }); },
     }], server: { host: "127.0.0.1", port: 0 },
   });
-  await server.listen(); origin = server.resolvedUrls!.local[0]; browser = await chromium.launch({ headless: true });
+  await server.listen(); origin = server.resolvedUrls!.local[0]; browser = await launchNativeChromium();
 }, 60000);
 afterAll(async () => { await browser?.close(); await server?.close(); expect(runtimeErrors).toEqual([]); });
 async function open(width = 320, query = "", height = 640) {
@@ -330,6 +331,8 @@ describe("REC003 primary reservation recovery", () => {
     } finally { await page.close(); }
   });
 
+  // This covers navigation, editing, loss of the read, and recovery. The
+  // workflow budget must exceed open()'s existing 10s per-action bound.
   it.each([false, true])("preserves an editor without a usable item (unresolved save: %s)", async unresolved => {
     const page = await open(320, "?detail" + (unresolved ? "&uncertain-save" : ""));
     try {
@@ -365,7 +368,7 @@ describe("REC003 primary reservation recovery", () => {
         await noFixtureCommands(page);
       }
     } finally { await page.close(); }
-  });
+  }, 15_000);
 
   it("does not move focus away from an independent control after recovery", async () => {
     const page = await open(320, "?detail&read-status=503");

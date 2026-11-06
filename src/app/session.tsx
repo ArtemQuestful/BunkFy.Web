@@ -21,6 +21,7 @@ import {
 import type {
   AuthenticationMethods,
   BrowserAuthResponse,
+  BrowserMultiFactorStepUpRequest,
   BrowserTotpActivation,
   ExternalAuthenticationChallenge,
   ExternalAuthenticationResult,
@@ -44,6 +45,7 @@ import {
   SessionIdentityMismatchError,
 } from "./sessionTokenIdentity";
 import { refreshFailureInvalidatesSession } from "./sessionRecovery";
+import { isInsufficientAuthenticationError } from "./authenticationAssurance";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   isMultiFactorChallenge,
@@ -108,6 +110,7 @@ type SessionContextValue = {
   adoptBrowserAccount: (account: ApiSession) => void;
   logoutAll: () => Promise<void>;
   stepUpWithPassword: (password: string) => Promise<void>;
+  stepUpWithMultiFactor: (password: string, codeType: MultiFactorCodeType, code: string) => Promise<void>;
   selectWorkspace: (workspaceId: string) => void;
   captureRequestContext: (workspaceId?: string) => SessionRequestContext;
   request: <T>(path: string, options?: RequestInit) => Promise<T>;
@@ -149,7 +152,8 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
 
   const publishSessionIdentity = useCallback((identity: SessionIdentity | null) => {
     const signature = sessionIdentitySignature(identity);
-    if (publishedIdentityRef.current === signature) return;
+    if (publishedIdentityRef.current === signature &&
+      sessionIdentitySignature(readSessionIdentity()) === signature) return;
     publishedIdentityRef.current = signature;
     writeSessionIdentity(identity);
     sessionChannelRef.current?.postMessage(serializableSessionIdentity(identity));
@@ -442,6 +446,10 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
         assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
         return result;
       } catch (error) {
+        if (isInsufficientAuthenticationError(error)) {
+          assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+          throw error;
+        }
         if (
           !(error instanceof Error) ||
           !("status" in error) ||
@@ -611,6 +619,10 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
         assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
         return result;
       } catch (error) {
+        if (isInsufficientAuthenticationError(error)) {
+          assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+          throw error;
+        }
         if (
           !(error instanceof Error) ||
           !("status" in error) ||
@@ -637,6 +649,10 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
         assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
         return response;
       } catch (error) {
+        if (isInsufficientAuthenticationError(error)) {
+          assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+          throw error;
+        }
         if (
           !(error instanceof Error) ||
           !("status" in error) ||
@@ -658,18 +674,39 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     async (password: string) => {
       const active = sessionRef.current;
       if (!active) throw new Error("You are signed out.");
-      const response = await apiRequest<BrowserAuthResponse>(
-        "/api/auth/browser/step-up/password",
-        {
-          method: "POST",
-          body: JSON.stringify({ password }),
-        },
-        active,
-      );
-      setSession({
-        ...active,
-        accessToken: response.accessToken,
-        subjectId: accessTokenSubjectId(response.accessToken),
+      const boundarySequence = boundarySequenceRef.current;
+      await runWithBrowserSessionLock(async () => {
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        const response = await apiRequest<BrowserAuthResponse>(
+          "/api/auth/browser/step-up/password",
+          {
+            method: "POST",
+            body: JSON.stringify({ password }),
+          },
+          active,
+        );
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        setSession({ ...active, accessToken: response.accessToken });
+      });
+    },
+    [setSession],
+  );
+
+  const stepUpWithMultiFactor = useCallback(
+    async (password: string, codeType: MultiFactorCodeType, code: string) => {
+      const active = sessionRef.current;
+      if (!active) throw new Error("You are signed out.");
+      const boundarySequence = boundarySequenceRef.current;
+      const body: BrowserMultiFactorStepUpRequest = { password, codeType, code };
+      await runWithBrowserSessionLock(async () => {
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        const response = await apiRequest<BrowserAuthResponse>(
+          "/api/auth/browser/step-up/mfa",
+          { method: "POST", body: JSON.stringify(body) },
+          active,
+        );
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        setSession({ ...active, accessToken: response.accessToken });
       });
     },
     [setSession],
@@ -679,20 +716,21 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     async (code: string): Promise<string[]> => {
       const active = sessionRef.current;
       if (!active) throw new Error("You are signed out.");
-      const response = await apiRequest<BrowserTotpActivation>(
-        "/api/auth/browser/mfa/totp/activate",
-        {
-          method: "POST",
-          body: JSON.stringify({ code }),
-        },
-        active,
-      );
-      setSession({
-        ...active,
-        accessToken: response.accessToken,
-        subjectId: accessTokenSubjectId(response.accessToken),
+      const boundarySequence = boundarySequenceRef.current;
+      return await runWithBrowserSessionLock(async () => {
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        const response = await apiRequest<BrowserTotpActivation>(
+          "/api/auth/browser/mfa/totp/activate",
+          {
+            method: "POST",
+            body: JSON.stringify({ code }),
+          },
+          active,
+        );
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        setSession({ ...active, accessToken: response.accessToken });
+        return response.recoveryCodes;
       });
-      return response.recoveryCodes;
     },
     [setSession],
   );
@@ -701,15 +739,20 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     async (codeType: MultiFactorCodeType, code: string) => {
       const active = sessionRef.current;
       if (!active) throw new Error("You are signed out.");
-      await apiRequest<void>(
-        "/api/auth/browser/mfa/totp/disable",
-        {
-          method: "POST",
-          body: JSON.stringify({ codeType, code }),
-        },
-        active,
-      );
-      setSession(null);
+      const boundarySequence = boundarySequenceRef.current;
+      await runWithBrowserSessionLock(async () => {
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        await apiRequest<void>(
+          "/api/auth/browser/mfa/totp/disable",
+          {
+            method: "POST",
+            body: JSON.stringify({ codeType, code }),
+          },
+          active,
+        );
+        assertSessionBoundaryCurrent(boundarySequence, boundarySequenceRef, acceptsRefreshRef);
+        setSession(null);
+      });
     },
     [setSession],
   );
@@ -758,38 +801,71 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     startBrowserSessionSignOut(
       () => setSession(null),
       active
-        ? () =>
-          apiRequest<void>(
-            "/api/auth/browser/sign-out",
-            { method: "POST" },
-            active,
-          )
+        ? async () => {
+          // The cookie lock may have been held by a newer sign-in. Local
+          // sign-out already completed; never clean up its replacement cookie.
+          const hasReplacementSession = () => {
+            const current = sessionRef.current;
+            const persisted = readSessionIdentity();
+            return (current !== null && !matchesAuthenticationSession(current, active)) ||
+              (persisted !== null && !matchesAuthenticationSession(persisted, active));
+          };
+          if (hasReplacementSession()) return;
+          acceptsRefreshRef.current = false;
+          try {
+            await apiRequest<void>(
+              "/api/auth/browser/sign-out",
+              { method: "POST" },
+              active,
+            );
+          } finally {
+            if (!hasReplacementSession()) {
+              acceptsRefreshRef.current = false;
+              setSession(null);
+            }
+          }
+        }
         : undefined,
     );
   }, [setSession]);
 
   const logoutAll = useCallback(async () => {
     const active = sessionRef.current;
-    try {
-      if (active)
-        await apiRequest<void>(
-          "/api/auth/sign-out-all",
-          { method: "POST" },
-          active,
-        );
-    } finally {
+    if (!active) {
       acceptsRefreshRef.current = false;
-      try {
-        if (active)
+      setSession(null);
+      return;
+    }
+
+    // Global revocation belongs to the initiating subject/session. A workspace
+    // change keeps that intent; a different account or fresh sign-in does not.
+    const isInitiatingSessionCurrent = () => {
+      const persisted = readSessionIdentity();
+      return matchesAuthenticationSession(sessionRef.current, active) &&
+        (!persisted || matchesAuthenticationSession(persisted, active));
+    };
+
+    try {
+      await apiRequest<void>(
+        "/api/auth/sign-out-all",
+        { method: "POST" },
+        active,
+      );
+    } finally {
+      await runWithBrowserSessionLock(async () => {
+        if (!isInitiatingSessionCurrent()) return;
+        acceptsRefreshRef.current = false;
+        try {
           await apiRequest<void>(
             "/api/auth/browser/sign-out",
             { method: "POST" },
             active,
           );
-      } catch {
-        // The global revocation can make the cookie sign-out request unauthorized.
-      }
-      setSession(null);
+        } catch {
+          // Global revocation can make the cookie sign-out request unauthorized.
+        }
+        if (isInitiatingSessionCurrent()) setSession(null);
+      });
     }
   }, [setSession]);
 
@@ -861,6 +937,7 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
       adoptBrowserAccount,
       logoutAll,
       stepUpWithPassword,
+      stepUpWithMultiFactor,
       selectWorkspace,
       captureRequestContext,
       request,
@@ -892,6 +969,7 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
       captureRequestContext,
       session,
       stepUpWithPassword,
+      stepUpWithMultiFactor,
       stream,
     ],
   );
@@ -906,6 +984,12 @@ export function useSession() {
   if (!value)
     throw new Error("useSession must be used inside SessionProvider.");
   return value;
+}
+
+function matchesAuthenticationSession(identity: SessionIdentity | null, expected: ApiSession): boolean {
+  if (!identity || !expected.subjectId || !expected.sessionId) return false;
+  return identity.subjectId?.toLowerCase() === expected.subjectId.toLowerCase() &&
+    identity.sessionId?.toLowerCase() === expected.sessionId.toLowerCase();
 }
 
 function readSessionIdentity(): SessionIdentity | null {
