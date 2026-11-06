@@ -57,7 +57,7 @@ import {
 
 export function JoinWorkspacePage() {
   const navigate = useNavigate();
-  const { logout, request, selectWorkspace, session } = useSession();
+  const { captureRequestContext, logout, request, selectWorkspace, session } = useSession();
   const {
     ensureWorkspaceVisible,
     setSelectedWorkspaceId,
@@ -158,26 +158,56 @@ export function JoinWorkspacePage() {
   const join = useMutation<WorkspaceJoinResolution>({
     mutationFn: async () => {
       if (!secret) throw new Error("This invitation link is incomplete.");
+      const context = captureRequestContext();
+      const assertJoinCurrent = () => {
+        context.assertCurrent();
+        if (!activeJoinPage.current) throw new Error("This invitation page has been closed.");
+      };
 
-      await request<WorkspaceStaffOnboarding>(
-        workspaceJoinContextPath(secret) + "/applications",
-        {
-          method: "POST",
-          headers: workspaceJoinContextHeaders(secret),
-          body: JSON.stringify({
-            displayName: staffProfile.displayName.trim(),
-            legalName: emptyToNull(staffProfile.legalName),
-            workEmail: emptyToNull(staffProfile.workEmail),
-            workPhone: emptyToNull(staffProfile.workPhone),
-            employeeNumber: null,
-            jobTitle: emptyToNull(staffProfile.jobTitle),
-            department: emptyToNull(staffProfile.department),
-          }),
-        },
-      );
+      try {
+        await context.request<WorkspaceStaffOnboarding>(
+          workspaceJoinContextPath(secret) + "/applications",
+          {
+            method: "POST",
+            headers: workspaceJoinContextHeaders(secret),
+            body: JSON.stringify({
+              displayName: staffProfile.displayName.trim(),
+              legalName: emptyToNull(staffProfile.legalName),
+              workEmail: emptyToNull(staffProfile.workEmail),
+              workPhone: emptyToNull(staffProfile.workPhone),
+              employeeNumber: null,
+              jobTitle: emptyToNull(staffProfile.jobTitle),
+              department: emptyToNull(staffProfile.department),
+            }),
+          },
+        );
+      } catch (error) {
+        assertJoinCurrent();
+        if (
+          secret.kind !== "invitation" ||
+          !(error instanceof ApiError) ||
+          error.status !== 409 ||
+          error.code !== "Workspaces.StaffOnboardingProfileMutationAuthorityUnavailable" ||
+          !data?.organizationId || !sourceId || !subjectId
+        ) throw error;
+
+        // Staff owns a completed profile. Read only the applicant's current
+        // status, then let the protected invitation endpoint revalidate replay.
+        const application = await context.request<WorkspaceStaffOnboarding>(
+          `/api/workspace-staff-enrollment/${encodeURIComponent(data.organizationId)}/applications/current` +
+            `?sourceKind=1&sourceId=${encodeURIComponent(sourceId)}`,
+        );
+        assertJoinCurrent();
+        if (
+          application.status !== 5 || !application.applicationId || !application.staffMemberId ||
+          application.organizationId !== data.organizationId || application.sourceKind !== 1 ||
+          application.sourceId !== sourceId || application.subjectId !== subjectId
+        ) throw error;
+      }
+      assertJoinCurrent();
 
       if (secret.kind === "invitation") {
-        const acceptance = await request<OrganizationInvitationAcceptance>(
+        const acceptance = await context.request<OrganizationInvitationAcceptance>(
           workspaceJoinContextPath(secret) + "/join",
           { method: "POST", headers: workspaceJoinContextHeaders(secret) },
         );
@@ -185,7 +215,7 @@ export function JoinWorkspacePage() {
         return { kind: "joined", workspaceId };
       }
 
-      const outcome = await request<OrganizationEnrollmentOutcome>(
+      const outcome = await context.request<OrganizationEnrollmentOutcome>(
         workspaceJoinContextPath(secret) + "/join",
         { method: "POST", headers: workspaceJoinContextHeaders(secret) },
       );

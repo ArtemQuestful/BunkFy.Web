@@ -115,6 +115,100 @@ describe("native workspace activation with existing workspace selection", () => 
     } finally { await context.close(); }
   }, 30000);
 
+  it.each([
+    "completed", "provisioning", "failed", "wrong-subject", "wrong-organization",
+    "wrong-source", "wrong-kind", "missing-application", "missing-staff",
+    "unavailable", "other-conflict", "replay-denied", "leave", "sign-out",
+  ] as const)("revalidates an accepted invitation after Staff owns its profile: %s", async scenario => {
+    const context = await browser.newContext();
+    await context.addInitScript(value => localStorage.setItem("bunkfy.session.identity.v2", JSON.stringify(value)), identity);
+    const page = await context.newPage();
+    const contexts = new Map<string, { sourceKind: number }>();
+    let profileAttempts = 0;
+    let statusReads = 0;
+    let acceptances = 0;
+    let held = false;
+    let releaseStatus: (() => void) | undefined;
+    const propertiesTenants: (string | undefined)[] = [];
+    await page.route(url => url.pathname.startsWith("/api/"), async route => {
+      const path = await resolveJoinTransport(route, contexts);
+      if (path === null) return;
+      let status = 200;
+      let body: unknown;
+      if (path === "/api/auth/browser/refresh") body = { accessToken: token };
+      else if (path === "/api/auth/browser/sign-out") body = {};
+      else if (path === "/api/organizations") body = { items: [membership(homeId), membership(targetId)], page: 1, pageSize: 100, hasMore: false };
+      else if (path === "/api/organization-invitations/preview") body = {
+        organizationId: targetId, organizationName: "Target", organizationSlug: "target",
+        invitationId: sourceId, expiresAtUtc: "2027-01-01T00:00:00Z", recipientBound: true,
+      };
+      else if (path === "/api/workspace-staff-enrollment/applications") {
+        profileAttempts++;
+        status = 409;
+        body = { code: scenario === "other-conflict" ? "Test.UnrelatedConflict" : "Workspaces.StaffOnboardingProfileMutationAuthorityUnavailable" };
+      } else if (path === `/api/workspace-staff-enrollment/${targetId}/applications/current`) {
+        statusReads++;
+        const query = new URL(route.request().url()).searchParams;
+        expect(query.get("sourceKind")).toBe("1");
+        expect(query.get("sourceId")).toBe(sourceId);
+        if (scenario === "leave" || scenario === "sign-out") {
+          held = true;
+          await new Promise<void>(resolve => { releaseStatus = resolve; });
+        }
+        status = scenario === "unavailable" ? 403 : 200;
+        body = {
+          applicationId: scenario === "missing-application" ? "" : "77777777-7777-4777-8777-777777777777",
+          organizationId: scenario === "wrong-organization" ? homeId : targetId,
+          sourceKind: scenario === "wrong-kind" ? 2 : 1,
+          sourceId: scenario === "wrong-source" ? homeId : sourceId,
+          subjectId: scenario === "wrong-subject" ? sessionId : subjectId,
+          status: scenario === "provisioning" ? 4 : scenario === "failed" ? 6 : 5,
+          staffMemberId: scenario === "missing-staff" ? null : "88888888-8888-4888-8888-888888888888",
+          verifiedAccountEmail: null, displayName: null, legalName: null, workEmail: null,
+          workPhone: null, employeeNumber: null, jobTitle: null, department: null,
+        };
+      } else if (path === "/api/organization-invitations/accept") {
+        acceptances++;
+        status = scenario === "replay-denied" ? 403 : 200;
+        body = scenario === "replay-denied" ? { code: "Organizations.InvitationUnavailable" }
+          : { membership: { ...membership(targetId), membershipId: "99999999-9999-4999-8999-999999999999" } };
+      } else if (path === "/api/properties") {
+        propertiesTenants.push(route.request().headers()["x-tenant-id"]);
+        body = { properties: [], page: 1, pageSize: 100, hasMore: false };
+      } else { status = 500; body = { code: "Test.UnexpectedRoute" }; }
+      await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    });
+    try {
+      await page.goto(origin + "join#invitation=synthetic-terminal-invitation");
+      await page.getByRole("button", { name: "Join workspace", exact: true }).click();
+      await expect.poll(() => profileAttempts).toBe(1);
+      if (scenario === "leave" || scenario === "sign-out") {
+        await expect.poll(() => held).toBe(true);
+        if (scenario === "leave") await page.getByLabel("Back to BunkFy", { exact: true }).click();
+        else await page.getByRole("button", { name: "Sign out", exact: true }).click();
+        await page.getByText(scenario === "leave" ? "Workspace ready" : "Restoring session", { exact: true }).waitFor();
+        const response = page.waitForResponse(value => new URL(value.url()).pathname.endsWith("/applications/current"));
+        releaseStatus!();
+        await (await response).finished();
+      }
+      if (scenario === "completed") {
+        await page.getByRole("navigation", { name: "Main navigation" }).waitFor({ timeout: 5000 });
+        expect(acceptances).toBe(1);
+        expect(await page.locator("[data-tenant]").textContent()).toBe(targetId);
+        expect(await page.locator("[data-selected]").textContent()).toBe(targetId);
+        expect(new URL(page.url()).pathname).toBe("/");
+        expect(propertiesTenants).toContain(targetId);
+      } else {
+        await expect.poll(() => page.evaluate(() => (window as unknown as { joinMutationsSettled(): boolean }).joinMutationsSettled())).toBe(true);
+        expect(acceptances).toBe(scenario === "replay-denied" ? 1 : 0);
+        expect(propertiesTenants).not.toContain(targetId);
+        if (scenario !== "leave" && scenario !== "sign-out") expect(new URL(page.url()).pathname).toBe("/join");
+      }
+      expect(profileAttempts).toBe(1);
+      expect(statusReads).toBe(scenario === "other-conflict" ? 0 : 1);
+    } finally { releaseStatus?.(); await context.close(); }
+  }, 30000);
+
   it.each(["invitation", "enrollment", "legacy", "retry"] as const)("prepares %s custody in the actual app before sign-in", async scenario => {
     const context = await browser.newContext();
     const credential = "synthetic-app-bootstrap-credential";
