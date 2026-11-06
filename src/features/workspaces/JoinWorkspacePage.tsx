@@ -11,7 +11,7 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { ApiError } from "../../api/client";
 import type {
@@ -67,7 +67,7 @@ export function JoinWorkspacePage() {
   // recovery and its protected cookie are cleared. No reusable token is held.
   const [secret] = useState<WorkspaceJoinContext | null>(readPreservedWorkspaceJoinContext);
   const secretKey = secret ? `${secret.kind}:${secret.contextId}` : "missing";
-  const accountKey = session?.username ?? "";
+  const accountKey = session?.subjectId ?? "";
   const subjectId = session?.subjectId;
   const activationController = useRef<AbortController | null>(null);
   const activeJoinPage = useRef(false);
@@ -79,9 +79,18 @@ export function JoinWorkspacePage() {
     };
   }, []);
   const isEnrollment = secret?.kind === "enrollment";
-  const [staffProfile, setStaffProfile] = useState(() =>
-    readInviteStaffDraft(session?.username),
+  const [staffDraft, setStaffDraft] = useState(() => ({
+    subjectId: accountKey,
+    profile: readInviteStaffDraft(accountKey, session?.username),
+  }));
+  const ownerDraft = useMemo(
+    () => readInviteStaffDraft(accountKey, session?.username),
+    [accountKey, session?.username],
   );
+  // Hide the previous actor's form during render, before effects can reset it.
+  const staffProfile = staffDraft.subjectId === accountKey
+    ? staffDraft.profile
+    : ownerDraft;
   const [pendingApproval, setPendingApproval] = useState(false);
   const [withdrawalConfirmation, setWithdrawalConfirmation] = useState(false);
   const [withdrawalResolution, setWithdrawalResolution] = useState<
@@ -268,6 +277,7 @@ export function JoinWorkspacePage() {
     resetWorkspaceActivation,
     resetJoin,
     resetWithdraw,
+    sourceId,
     secret?.kind,
     secret?.contextId,
     secretKey,
@@ -379,7 +389,7 @@ export function JoinWorkspacePage() {
   }
 
   function updateStaffProfile(profile: StaffProfileDraft) {
-    setStaffProfile(profile);
+    setStaffDraft({ subjectId: accountKey, profile });
     saveInviteStaffDraft(profile, accountKey);
   }
 

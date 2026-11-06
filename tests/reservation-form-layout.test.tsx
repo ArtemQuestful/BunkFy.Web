@@ -331,6 +331,8 @@ describe("REC003 primary reservation recovery", () => {
     } finally { await page.close(); }
   });
 
+  // This covers navigation, editing, loss of the read, and recovery. The
+  // workflow budget must exceed open()'s existing 10s per-action bound.
   it.each([false, true])("preserves an editor without a usable item (unresolved save: %s)", async unresolved => {
     const page = await open(320, "?detail" + (unresolved ? "&uncertain-save" : ""));
     try {
@@ -366,7 +368,7 @@ describe("REC003 primary reservation recovery", () => {
         await noFixtureCommands(page);
       }
     } finally { await page.close(); }
-  });
+  }, 15_000);
 
   it("does not move focus away from an independent control after recovery", async () => {
     const page = await open(320, "?detail&read-status=503");

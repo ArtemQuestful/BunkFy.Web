@@ -13,6 +13,7 @@ import {
   apiDownload,
   apiRequest,
   apiStream,
+  accessTokenSubjectId,
   resolveApiBaseUrl,
   type ApiDownload,
   type ApiSession,
@@ -72,6 +73,12 @@ export type ExternalAuthenticationCompletion =
       username: string;
     };
 
+export type SessionRequestContext = {
+  request: <T>(path: string, options?: RequestInit) => Promise<T>;
+  assertCurrent: () => void;
+  selectWorkspace: (workspaceId: string) => SessionRequestContext;
+};
+
 type SessionContextValue = {
   session: ApiSession | null;
   isRestoring: boolean;
@@ -80,7 +87,7 @@ type SessionContextValue = {
   retrySessionRestore: () => Promise<void>;
   abandonSessionRestore: () => void;
   login: (credentials: Credentials) => Promise<MultiFactorChallenge | null>;
-  register: (credentials: Credentials) => Promise<void>;
+  register: (credentials: Credentials, onAuthenticated?: (subjectId: string) => void) => Promise<void>;
   completeMultiFactorSignIn: (
     challengeToken: string,
     codeType: MultiFactorCodeType,
@@ -105,6 +112,7 @@ type SessionContextValue = {
   stepUpWithPassword: (password: string) => Promise<void>;
   stepUpWithMultiFactor: (password: string, codeType: MultiFactorCodeType, code: string) => Promise<void>;
   selectWorkspace: (workspaceId: string) => void;
+  captureRequestContext: (workspaceId?: string) => SessionRequestContext;
   request: <T>(path: string, options?: RequestInit) => Promise<T>;
   download: (path: string, options?: RequestInit) => Promise<ApiDownload>;
   stream: (path: string, signal: AbortSignal) => Promise<Response>;
@@ -343,6 +351,7 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     async (
       mode: "login" | "register",
       credentials: Credentials,
+      onAuthenticated?: (subjectId: string) => void,
     ): Promise<MultiFactorChallenge | null> => {
       return await runWithBrowserSessionLock(async () => {
         const response = await apiRequest<BrowserAuthResponse | MultiFactorChallenge>(
@@ -368,11 +377,17 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
           return response;
         }
         acceptsRefreshRef.current = true;
-        setSession({
+        const subjectId = accessTokenSubjectId(response.accessToken);
+        const authenticated = bindApiSessionIdentity({
           ...response,
           tenantId: GLOBAL_IDENTITY_SCOPE,
           username: credentials.username,
-        });
+          subjectId,
+        }, sessionRef.current);
+        // Bind the registration draft to the validated token's subject inside
+        // the browser-session lock, before the authenticated page is rendered.
+        onAuthenticated?.(subjectId);
+        setSession(authenticated);
         return null;
       });
     },
@@ -400,6 +415,7 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
           ...response,
           tenantId: GLOBAL_IDENTITY_SCOPE,
           username,
+          subjectId: accessTokenSubjectId(response.accessToken),
         };
         try {
           const methods = await apiRequest<AuthenticationMethods>(
@@ -555,6 +571,7 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
             ...response,
             tenantId: GLOBAL_IDENTITY_SCOPE,
             username: `${providerLabel(provider)} account`,
+            subjectId: accessTokenSubjectId(response.accessToken),
           };
           try {
             const methods = await apiRequest<AuthenticationMethods>(
@@ -863,6 +880,38 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
     [setSession],
   );
 
+  const renderedBoundarySequence = boundarySequenceRef.current;
+  const captureRequestContext = useCallback((workspaceId?: string): SessionRequestContext => {
+    // Async intent preparation must retain the actor and scope of its render.
+    // The ordinary request function stays stable for existing query effects.
+    assertSessionBoundaryCurrent(renderedBoundarySequence, boundarySequenceRef, acceptsRefreshRef);
+    if (!session || !sessionRef.current) throw new Error("You are signed out.");
+    if (workspaceId !== undefined && sessionRef.current.tenantId !== workspaceId) {
+      throw new SessionBoundarySupersededError();
+    }
+
+    const bind = (sequence: number): SessionRequestContext => {
+      const assertCurrent = () => assertSessionBoundaryCurrent(sequence, boundarySequenceRef, acceptsRefreshRef);
+      return {
+        assertCurrent,
+        request: async <T,>(path: string, options?: RequestInit) => {
+          assertCurrent();
+          const result = await request<T>(path, options);
+          assertCurrent();
+          return result;
+        },
+        selectWorkspace: (nextWorkspaceId) => {
+          // Onboarding may deliberately select the workspace just created. Do
+          // this synchronously under the old guard and return its new guard.
+          assertCurrent();
+          selectWorkspace(nextWorkspaceId);
+          return bind(boundarySequenceRef.current);
+        },
+      };
+    };
+    return bind(renderedBoundarySequence);
+  }, [renderedBoundarySequence, request, selectWorkspace, session]);
+
   const value = useMemo<SessionContextValue>(
     () => ({
       session,
@@ -872,8 +921,8 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
       retrySessionRestore: restoreSession,
       abandonSessionRestore,
       login: (credentials) => authenticate("login", credentials),
-      register: async (credentials) => {
-        await authenticate("register", credentials);
+      register: async (credentials, onAuthenticated) => {
+        await authenticate("register", credentials, onAuthenticated);
       },
       completeMultiFactorSignIn,
       activateTotp,
@@ -890,6 +939,7 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
       stepUpWithPassword,
       stepUpWithMultiFactor,
       selectWorkspace,
+      captureRequestContext,
       request,
       download,
       stream,
@@ -916,6 +966,7 @@ export function SessionProvider({ children, restoreOnMount = true, prepareBrowse
       restoreSession,
       restoringIdentity,
       selectWorkspace,
+      captureRequestContext,
       session,
       stepUpWithPassword,
       stepUpWithMultiFactor,

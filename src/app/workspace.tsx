@@ -9,7 +9,6 @@ import {
   type ReactNode,
 } from "react";
 import type {
-  OrganizationListResponse,
   OrganizationMembershipSummary,
   Property,
   StationWorkspaceSettings,
@@ -17,6 +16,7 @@ import type {
 import { loadAllProperties } from "../features/properties/propertiesApi";
 import { reconcileSelectedWorkspaceId } from "../features/workspaces/workspaceCatalogue";
 import { waitForWorkspaceMembership } from "../features/workspaces/workspaceAccess";
+import { loadAllWorkspaces } from "../features/workspaces/workspacesApi";
 import { useSession } from "./session";
 import { useProductCapabilities } from "./productCapabilities";
 
@@ -61,14 +61,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   });
   const workspacesQuery = useQuery({
     queryKey: ["organizations", "mine"],
-    queryFn: () => request<OrganizationListResponse>("/api/organizations?page=1&pageSize=100"),
+    queryFn: (context) => loadAllWorkspaces(request, context.signal),
   });
-  const workspaces = workspacesQuery.data?.items ?? [];
+  const workspaces = workspacesQuery.data ?? [];
   const refetchWorkspaceCatalogue = workspacesQuery.refetch;
   const ensureWorkspaceVisible = useCallback(
     (workspaceId: string, signal?: AbortSignal) => waitForWorkspaceMembership(async () => {
       const result = await refetchWorkspaceCatalogue({ throwOnError: true });
-      return result.data?.items ?? [];
+      return result.data ?? [];
     }, workspaceId, { signal }),
     [refetchWorkspaceCatalogue],
   );
@@ -162,7 +162,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       selectedWorkspaceId,
       setSelectedWorkspaceId,
       refetchWorkspaces: async () => {
-        await workspacesQuery.refetch();
+        await workspacesQuery.refetch({ throwOnError: true });
       },
       ensureWorkspaceVisible,
       properties,

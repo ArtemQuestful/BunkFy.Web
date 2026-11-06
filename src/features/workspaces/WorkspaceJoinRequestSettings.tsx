@@ -1,10 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { RotateCw, UserCheck, UserX } from "lucide-react";
-import { useEffect, useState } from "react";
-import type {
-  WorkspaceStaffOnboarding,
-  WorkspaceStaffOnboardingListResponse,
-} from "../../api/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { WorkspaceStaffOnboardingSummary } from "../../api/types";
 import {
   compositeSourceCurrent,
   compositeSourceUsable,
@@ -19,7 +16,13 @@ import { PaginationBar } from "../../components/ui/PaginationBar";
 import { ErrorState } from "../../components/ui/primitives";
 import { workspaceAccessActionAllowed } from "./workspaceAccessAuthority";
 
-const PAGE_SIZE = 25;
+import {
+  JOIN_REQUEST_PAGE_SIZE as PAGE_SIZE,
+  WorkspaceJoinRecoveryOperations,
+  attemptWorkspaceJoinRecovery,
+  loadWorkspaceJoinReviews,
+  workspaceJoinReviewMatches,
+} from "./workspaceJoinReviews";
 
 export function WorkspaceJoinRequestSettings({
   workspaceId,
@@ -30,13 +33,21 @@ export function WorkspaceJoinRequestSettings({
   canGrant: boolean;
   onMembershipChanged: () => Promise<void>;
 }) {
-  const { request } = useSession();
+  const { request, session } = useSession();
+  const identity = JSON.stringify([workspaceId, session?.tenantId, session?.subjectId, session?.sessionId, session?.generation]);
+  const liveIdentity = useRef(identity);
+  liveIdentity.current = identity;
+  const recoveryOperations = useMemo(() => new WorkspaceJoinRecoveryOperations(), [identity]);
   const [page, setPage] = useState(1);
   const joinRequests = useQuery({
-    queryKey: ["workspace-staff-onboarding", workspaceId, "actionable", page],
-    queryFn: () => request<WorkspaceStaffOnboardingListResponse>(
-      `/api/workspace-staff-enrollment/applications?page=${page}&pageSize=${PAGE_SIZE}`,
-    ),
+    queryKey: ["workspace-staff-onboarding", workspaceId, "actionable", identity, canGrant, page],
+    queryFn: ({ signal }) => loadWorkspaceJoinReviews(request, page, signal),
+    enabled: session?.tenantId === workspaceId,
+    gcTime: 0,
+    staleTime: 0,
+    retry: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });
@@ -56,10 +67,12 @@ export function WorkspaceJoinRequestSettings({
     requestsCurrent,
   );
   const resolution = useMutation({
-    mutationFn: ({ application, action }: {
-      application: WorkspaceStaffOnboarding;
+    mutationFn: ({ application, action, boundary }: {
+      application: WorkspaceStaffOnboardingSummary;
       action: "approve" | "reject" | "retry";
+      boundary: string;
     }) => {
+      if (boundary !== liveIdentity.current) throw new Error("Refresh join requests after changing accounts or workspaces.");
       if (!workspaceAccessActionAllowed(
         action === "reject" ? "deny" : "grant",
         canGrant,
@@ -68,7 +81,26 @@ export function WorkspaceJoinRequestSettings({
         throw new Error("Refresh join requests and workspace authority before granting access.");
       }
       if (action === "retry") {
-        return request(`/api/workspace-staff-enrollment/applications/${application.applicationId}/retry`, { method: "POST" });
+        const review = joinRequests.data?.reviews[application.applicationId];
+        if (!application.hasStaffTarget && review) {
+          if (!workspaceJoinReviewMatches(application, review)) {
+            throw new Error("Refresh this request before retrying setup.");
+          }
+          // Preserve the established early-failure retry only after a fresh
+          // exact-absence review. The server rechecks Staff ownership under
+          // its mutation locks. Never downgrade a receipted recovery failure.
+          return request(`/api/workspace-staff-enrollment/applications/${application.applicationId}/retry`, { method: "POST" });
+        }
+        const receiptError = joinRequests.data?.receiptErrors[application.applicationId];
+        if (receiptError) throw new Error(receiptError);
+        return attemptWorkspaceJoinRecovery(
+          request, recoveryOperations, application,
+          joinRequests.data?.receipts[application.applicationId],
+        );
+      }
+      const review = joinRequests.data?.reviews[application.applicationId];
+      if (!requestsCurrent || !review || !workspaceJoinReviewMatches(application, review)) {
+        throw new Error("Refresh the applicant's details before reviewing this request.");
       }
       if (!application.claimId || !application.claimVersion) {
         throw new Error("This join request is still being prepared.");
@@ -78,7 +110,8 @@ export function WorkspaceJoinRequestSettings({
         body: JSON.stringify({ expectedVersion: application.claimVersion }),
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, variables) => {
+      if (variables.boundary !== liveIdentity.current) return;
       await Promise.all([joinRequests.refetch(), onMembershipChanged()]);
     },
   });
@@ -114,23 +147,38 @@ export function WorkspaceJoinRequestSettings({
             {!joinRequests.data?.items.length && (
               <p className="py-8 text-center text-sm text-base-content/50">No join requests need attention.</p>
             )}
-            {(joinRequests.data?.items ?? []).map((application) => (
-              <article
+            {(joinRequests.data?.items ?? []).map((application) => {
+              const review = requestsCurrent ? joinRequests.data?.reviews[application.applicationId] : undefined;
+              const receipt = recoveryOperations.receipt(application.applicationId) ?? joinRequests.data?.receipts[application.applicationId];
+              return <article
                 key={application.applicationId}
                 className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
                   <p className="truncate font-semibold">
-                    {application.displayName ?? application.verifiedAccountEmail ?? "Staff applicant"}
+                    {review?.displayName ?? review?.verifiedAccountEmail ?? (application.status === 6 ? "Staff setup needs attention" : "Applicant details unavailable")}
                   </p>
                   <p className="mt-1 truncate text-xs text-base-content/50">
-                    {application.workEmail ?? application.verifiedAccountEmail}
-                    {application.jobTitle ? ` / ${application.jobTitle}` : ""}
+                    {review?.workEmail ?? review?.verifiedAccountEmail}
+                    {review?.jobTitle ? ` / ${review.jobTitle}` : ""}
                   </p>
                   <p className="mt-1 text-xs text-base-content/45">
                     {application.status === 6 ? "Provisioning needs attention" : "Requested"}{" "}
                     {new Date(application.createdAtUtc).toLocaleString()}
                   </p>
+                  {!review && !application.hasStaffTarget && (
+                    <p className="mt-1 text-xs text-base-content/55">
+                      {requestsCurrent ? joinRequests.data?.reviewErrors[application.applicationId] : "Refreshing applicant details…"}
+                    </p>
+                  )}
+                  {joinRequests.data?.receiptErrors[application.applicationId] && (
+                    <p className="mt-1 text-xs text-warning">{joinRequests.data.receiptErrors[application.applicationId]}</p>
+                  )}
+                  {receipt && (
+                    <p className="mt-1 text-xs text-base-content/55">
+                      {receipt.outcome === 2 ? "An administrator needs to review this setup." : receipt.retryDirective === 1 ? "Setup is still being checked. Wait a few seconds before retrying." : "Setup recovery was recorded. Refresh to see the latest status."}
+                    </p>
+                  )}
                   {application.failureCode && (
                     <p className="mt-1 text-xs font-medium text-warning">{application.failureCode}</p>
                   )}
@@ -139,8 +187,8 @@ export function WorkspaceJoinRequestSettings({
                   {application.status === 6 ? (
                     <button
                       className="btn btn-primary btn-sm text-white"
-                      onClick={() => resolution.mutate({ application, action: "retry" })}
-                      disabled={resolution.isPending || !grantResolutionAllowed}
+                      onClick={() => resolution.mutate({ application, action: "retry", boundary: identity })}
+                      disabled={resolution.isPending || !grantResolutionAllowed || Boolean(joinRequests.data?.receiptErrors[application.applicationId])}
                     >
                       <RotateCw size={15} />Retry setup
                     </button>
@@ -148,23 +196,23 @@ export function WorkspaceJoinRequestSettings({
                     <>
                       <button
                         className="btn btn-ghost btn-sm text-error"
-                        onClick={() => resolution.mutate({ application, action: "reject" })}
-                        disabled={resolution.isPending || !application.claimId}
+                        onClick={() => resolution.mutate({ application, action: "reject", boundary: identity })}
+                        disabled={resolution.isPending || !application.claimId || !review}
                       >
                         <UserX size={15} />Reject
                       </button>
                       <button
                         className="btn btn-primary btn-sm text-white"
-                        onClick={() => resolution.mutate({ application, action: "approve" })}
-                        disabled={resolution.isPending || !application.claimId || !grantResolutionAllowed}
+                        onClick={() => resolution.mutate({ application, action: "approve", boundary: identity })}
+                        disabled={resolution.isPending || !application.claimId || !review || !grantResolutionAllowed}
                       >
                         <UserCheck size={15} />Approve
                       </button>
                     </>
                   )}
                 </div>
-              </article>
-            ))}
+              </article>;
+            })}
           </div>
           <PaginationBar
             page={page}

@@ -1,29 +1,39 @@
 import { useMutation } from "@tanstack/react-query";
 import { ArrowRight, Building2, Check, Link2, LogOut, UserRound } from "lucide-react";
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import type { OrganizationMembershipSummary } from "../../api/types";
 import { useNetworkStatus } from "../../app/networkStatus";
-import { useSession } from "../../app/session";
+import { useSession, type SessionRequestContext } from "../../app/session";
 import { useWorkspace } from "../../app/workspace";
 import { BrandMark } from "../../components/ui/BrandMark";
 import { ErrorState } from "../../components/ui/primitives";
 import { waitForWorkspaceAccess } from "./workspaceAccess";
 import { StaffProfileFields } from "./StaffProfileFields";
+import { defaultStaffProfile } from "./staffOnboarding";
 import {
-  completeCurrentStaffProfile,
-  defaultStaffProfile,
-} from "./staffOnboarding";
-import {
+  clearWorkspaceCreationAttempt,
+  readWorkspaceCreationAttempt,
   resolveWorkspaceCreationAttempt,
   type WorkspaceCreationAttempt,
 } from "./workspaceCreationAttempt";
 import { WorkspaceCatalogueNotice } from "./WorkspaceCatalogueNotice";
+import {
+  continueWorkspaceOnboarding,
+  recoverCreatedWorkspace,
+} from "./workspaceOnboardingFlow";
 
 export function WorkspaceOnboardingPage() {
+  const { session } = useSession();
+  return <WorkspaceOnboardingForm key={`${session?.subjectId ?? ""}:${session?.sessionId ?? ""}`} />;
+}
+
+function WorkspaceOnboardingForm() {
   const { isOffline } = useNetworkStatus();
   const navigate = useNavigate();
-  const { logout, request, selectWorkspace, session } = useSession();
+  const { logout, captureRequestContext, session } = useSession();
+  const captureContext = useRef(captureRequestContext);
+  captureContext.current = captureRequestContext;
   const { refetchWorkspaces, setSelectedWorkspaceId } = useWorkspace();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -31,38 +41,146 @@ export function WorkspaceOnboardingPage() {
   const [staffProfile, setStaffProfile] = useState(() => defaultStaffProfile(session?.username));
   const [createdWorkspaceId, setCreatedWorkspaceId] = useState<string | null>(null);
   const [step, setStep] = useState<"workspace" | "profile">("workspace");
+  const [recoveryState, setRecoveryState] = useState<
+    "restoring" | "ready" | "created" | "pending"
+  >("restoring");
+  const [recoveryError, setRecoveryError] = useState<unknown>(null);
   const creationAttempt = useRef<WorkspaceCreationAttempt | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const accountId = session?.subjectId;
+    creationAttempt.current = null;
+    setCreatedWorkspaceId(null);
+    setStep("workspace");
+    setRecoveryError(null);
+    setRecoveryState("restoring");
+
+    if (!accountId) {
+      setRecoveryState("ready");
+      return () => {
+        active = false;
+      };
+    }
+
+    void (async () => {
+      let context: SessionRequestContext;
+      try {
+        context = captureContext.current();
+      } catch (error) {
+        if (active) {
+          setRecoveryError(error);
+          setRecoveryState("ready");
+        }
+        return;
+      }
+      try {
+        const attempt = await readWorkspaceCreationAttempt(accountId);
+        if (!active) return;
+        context.assertCurrent();
+        creationAttempt.current = attempt;
+        if (!attempt) {
+          setRecoveryState("ready");
+          return;
+        }
+
+        const workspace = await recoverCreatedWorkspace(context.request, attempt);
+        if (!active) return;
+        context.assertCurrent();
+        if (!workspace) {
+          setRecoveryState("pending");
+          return;
+        }
+
+        setCreatedWorkspaceId(workspace.organization.organizationId);
+        setName(workspace.organization.name);
+        setSlug(workspace.organization.slug);
+        setSlugEdited(true);
+        setRecoveryState("created");
+      } catch (error) {
+        if (!active) return;
+        try { context.assertCurrent(); } catch { return; }
+        setRecoveryError(error);
+        setRecoveryState("ready");
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [session?.subjectId]);
+
   const workspaceSetup = useMutation({
     mutationFn: async () => {
+      const accountId = session?.subjectId;
+      if (!accountId) throw new Error("You are signed out.");
+      const context = captureRequestContext();
       let workspace: OrganizationMembershipSummary | null = null;
       if (!createdWorkspaceId) {
         const payload = { name: name.trim(), slug: slug.trim() };
-        creationAttempt.current = resolveWorkspaceCreationAttempt(
+        const attempt = await resolveWorkspaceCreationAttempt(
           creationAttempt.current,
+          accountId,
           payload,
+          { assertCurrent: context.assertCurrent },
         );
-        workspace = await request<OrganizationMembershipSummary>("/api/organizations", {
-          method: "POST",
-          body: JSON.stringify({
-            operationId: creationAttempt.current.operationId,
-            ...payload,
-          }),
-        });
-        creationAttempt.current = null;
+        context.assertCurrent();
+        creationAttempt.current = attempt;
+        workspace = await recoverCreatedWorkspace(context.request, attempt);
+        workspace ??= await context.request<OrganizationMembershipSummary>(
+          "/api/organizations",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              operationId: attempt.operationId,
+              ...payload,
+            }),
+          },
+        );
       }
       const workspaceId = createdWorkspaceId ?? workspace!.organization.organizationId;
+      context.assertCurrent();
       setCreatedWorkspaceId(workspaceId);
-      selectWorkspace(workspaceId);
-      await waitForWorkspaceAccess(request, workspaceId);
+      const workspaceContext = context.selectWorkspace(workspaceId);
+      await waitForWorkspaceAccess(workspaceContext.request, workspaceId);
+      workspaceContext.assertCurrent();
       await refetchWorkspaces();
+      workspaceContext.assertCurrent();
       setSelectedWorkspaceId(workspaceId);
-      return workspaceId;
+      return workspaceContext;
     },
-    onSuccess: () => setStep("profile"),
+    onSuccess: (context) => {
+      context.assertCurrent();
+      setStep("profile");
+    },
   });
   const profileSetup = useMutation({
-    mutationFn: () => completeCurrentStaffProfile(request, staffProfile),
-    onSuccess: () => {
+    mutationFn: async () => {
+      const accountId = session?.subjectId;
+      if (!accountId || !createdWorkspaceId) throw new Error("Workspace setup is unavailable.");
+      let context = captureRequestContext(createdWorkspaceId);
+      await continueWorkspaceOnboarding({
+        request: (path, options) => context.request(path, options),
+        workspaceId: createdWorkspaceId,
+        staffProfile,
+        selectWorkspace: (workspaceId) => { context = context.selectWorkspace(workspaceId); },
+        refetchWorkspaces: async () => {
+          context.assertCurrent();
+          await refetchWorkspaces();
+          context.assertCurrent();
+        },
+        setSelectedWorkspaceId: (workspaceId) => {
+          context.assertCurrent();
+          setSelectedWorkspaceId(workspaceId);
+        },
+        clearCreationAttempt: () => clearWorkspaceCreationAttempt(accountId, undefined, context.assertCurrent),
+      });
+      context.assertCurrent();
+      creationAttempt.current = null;
+      return context;
+    },
+    onSuccess: (context) => {
+      context.assertCurrent();
       navigate("/properties", { replace: true });
     },
   });
@@ -140,6 +258,10 @@ export function WorkspaceOnboardingPage() {
             </button>
           </section>
 
+          {recoveryState === "restoring" && <div className="alert alert-info mb-5 text-sm">Checking for an interrupted workspace setup…</div>}
+          {recoveryState === "created" && <div className="alert alert-info mb-5 text-sm">This workspace was already created. Continue its setup to finish your staff profile.</div>}
+          {recoveryState === "pending" && <div className="alert alert-warning mb-5 text-sm">An interrupted create attempt is ready to retry. Re-enter the same workspace details to reuse it safely.</div>}
+          {Boolean(recoveryError) && <div className="mb-5"><ErrorState error={recoveryError} title="Workspace setup could not be checked" /></div>}
           {step === "workspace" ? (
             <form className="rounded-lg border border-base-300 bg-base-100 p-5 shadow-sm sm:p-6" onSubmit={submit}>
               <div className="flex items-center gap-3">
@@ -194,7 +316,7 @@ export function WorkspaceOnboardingPage() {
               {workspaceSetup.error && (
                 <div className="mt-5"><ErrorState error={workspaceSetup.error} title={createdWorkspaceId ? "Workspace access setup is still pending" : "Workspace could not be created"} /></div>
               )}
-              <button className="btn btn-primary mt-6 w-full text-white" disabled={isOffline || workspaceSetup.isPending} title={isOffline ? "Reconnect before creating a workspace." : undefined}>
+              <button className="btn btn-primary mt-6 w-full text-white" disabled={isOffline || workspaceSetup.isPending || recoveryState === "restoring"} title={isOffline ? "Reconnect before creating a workspace." : undefined}>
                 {workspaceSetup.isPending && <span className="loading loading-spinner loading-sm" />}
                 {createdWorkspaceId ? "Retry workspace setup" : "Create and continue"}
                 {!workspaceSetup.isPending && <ArrowRight size={17} />}

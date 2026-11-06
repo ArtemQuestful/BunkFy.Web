@@ -1,3 +1,11 @@
+import {
+  clearOrganizationOperationAttempt,
+  resolveOrganizationOperationAttempt,
+  type OrganizationOperationAttempt,
+  type OrganizationOperationAttemptOptions,
+  type OrganizationOperationScope,
+} from "./organizationOperationAttempt";
+
 export type WorkspaceUpdatePayload = {
   organizationId: string;
   expectedVersion: number;
@@ -5,20 +13,33 @@ export type WorkspaceUpdatePayload = {
   slug: string;
 };
 
-export type WorkspaceUpdateAttempt = {
-  fingerprint: string;
-  operationId: string;
-};
+export type WorkspaceUpdateAttempt = OrganizationOperationAttempt;
 
-export function resolveWorkspaceUpdateAttempt(
+export async function resolveWorkspaceUpdateAttempt(
   current: WorkspaceUpdateAttempt | null,
+  accountId: string,
   payload: WorkspaceUpdatePayload,
-  createOperationId: () => string = () => crypto.randomUUID(),
-): WorkspaceUpdateAttempt {
-  const fingerprint = workspaceUpdateFingerprint(payload);
-  return current?.fingerprint === fingerprint
-    ? current
-    : { fingerprint, operationId: createOperationId() };
+  options: OrganizationOperationAttemptOptions = {},
+): Promise<WorkspaceUpdateAttempt> {
+  return resolveOrganizationOperationAttempt(
+    current,
+    workspaceUpdateScope(accountId, payload.organizationId),
+    [workspaceUpdateFingerprint(payload)],
+    options,
+  );
+}
+
+export async function clearWorkspaceUpdateAttempt(
+  accountId: string,
+  workspaceId: string,
+  storage?: Pick<Storage, "removeItem">,
+  assertCurrent?: () => void,
+): Promise<void> {
+  return clearOrganizationOperationAttempt(
+    workspaceUpdateScope(accountId, workspaceId),
+    storage,
+    assertCurrent,
+  );
 }
 
 export function workspaceUpdateFingerprint(
@@ -30,4 +51,15 @@ export function workspaceUpdateFingerprint(
     name: payload.name.trim(),
     slug: payload.slug.trim().toLowerCase(),
   });
+}
+
+function workspaceUpdateScope(
+  accountId: string,
+  workspaceId: string,
+): OrganizationOperationScope {
+  return {
+    accountId,
+    workspaceId,
+    action: "update-workspace",
+  };
 }

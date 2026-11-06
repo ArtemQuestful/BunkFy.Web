@@ -12398,6 +12398,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace-staff-enrollment/applications/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkspaceStaffOnboardingSummaryListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace-staff-enrollment/applications/{applicationId}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    applicationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkspaceStaffOnboardingDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace-staff-enrollment/applications/{applicationId}/retry": {
         parameters: {
             query?: never;
@@ -17537,6 +17612,26 @@ export interface components {
          * @enum {integer}
          */
         WorkspaceStaffJoinSourceStatus: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+        WorkspaceStaffOnboardingActionableSummaryDto: {
+            /** Format: uuid */
+            applicationId: string;
+            sourceKind: components["schemas"]["WorkspaceStaffOnboardingSourceKind"];
+            /** Format: uuid */
+            sourceId: string;
+            /** Format: uuid */
+            claimId: string | null;
+            /** Format: int64 */
+            claimVersion: number | null;
+            status: components["schemas"]["WorkspaceStaffOnboardingStatus"];
+            /** Format: int64 */
+            version: number;
+            failureCode: string | null;
+            /** Format: date-time */
+            createdAtUtc: string;
+            /** Format: date-time */
+            lastChangedAtUtc: string;
+            hasStaffTarget: boolean;
+        };
         WorkspaceStaffOnboardingDataRightsCorrectionReceiptDto: {
             /** Format: uuid */
             receiptId: string;
@@ -17675,6 +17770,14 @@ export interface components {
          * @enum {integer}
          */
         WorkspaceStaffOnboardingStatus: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+        WorkspaceStaffOnboardingSummaryListResponse: {
+            items: components["schemas"]["WorkspaceStaffOnboardingActionableSummaryDto"][] | null;
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            pageSize: number;
+            hasMore: boolean;
+        };
     };
     responses: never;
     parameters: never;

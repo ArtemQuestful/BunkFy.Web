@@ -10,8 +10,8 @@ import {
   saveStaffProfileUpdateAttempt,
 } from "../staff/staffProfileUpdateAttempt";
 
-const INVITE_STAFF_DRAFT_KEY = "bunkfy.invite.staff-profile.v2";
-const LEGACY_INVITE_STAFF_DRAFT_KEY = "bunkfy.invite.staff-profile.v1";
+const INVITE_STAFF_DRAFT_KEY = "bunkfy.invite.staff-profile.v3";
+const inviteDraftMemory = new Map<string, StaffProfileDraft | null>();
 
 export type StaffProfileDraft = {
   displayName: string;
@@ -41,25 +41,62 @@ export function defaultStaffProfile(email = ""): StaffProfileDraft {
 
 export function saveInviteStaffDraft(
   profile: StaffProfileDraft,
-  identity = "",
+  subjectId = "",
 ): void {
-  window.sessionStorage.setItem(staffDraftKey(identity), JSON.stringify(profile));
+  const owner = draftSubject(subjectId);
+  if (!owner) return;
+  const ownedProfile = { ...profile };
+  inviteDraftMemory.set(owner, ownedProfile);
+  try {
+    window.sessionStorage.setItem(
+      staffDraftKey(owner),
+      JSON.stringify({ version: 1, subjectId: owner, profile: ownedProfile }),
+    );
+  } catch {
+    // The authenticated owner's draft remains usable in this page when storage is blocked.
+  }
 }
 
-export function readInviteStaffDraft(email = ""): StaffProfileDraft {
-  const fallback = defaultStaffProfile(email);
+export function readInviteStaffDraft(subjectId = "", email = ""): StaffProfileDraft {
+  const fallback = defaultStaffProfile(email.includes("@") ? email : "");
+  const owner = draftSubject(subjectId);
+  if (!owner) return fallback;
+  if (inviteDraftMemory.has(owner)) {
+    const memory = inviteDraftMemory.get(owner);
+    return memory ? { ...memory } : fallback;
+  }
   try {
-    const stored = window.sessionStorage.getItem(staffDraftKey(email));
-    const legacy = stored ? null : readCompatibleLegacyDraft(email);
-    const parsed = JSON.parse(stored ?? legacy ?? "null") as Partial<StaffProfileDraft> | null;
-    return parsed ? { ...fallback, ...parsed, workEmail: parsed.workEmail || fallback.workEmail } : fallback;
+    const stored = window.sessionStorage.getItem(staffDraftKey(owner));
+    if (!stored || stored.length > 16_384) return fallback;
+    const parsed = JSON.parse(stored) as {
+      version?: unknown;
+      subjectId?: unknown;
+      profile?: Partial<Record<keyof StaffProfileDraft, unknown>>;
+    } | null;
+    if (parsed?.version !== 1 || parsed.subjectId !== owner || !parsed.profile) return fallback;
+    const profile = parsed.profile;
+    return {
+      displayName: typeof profile.displayName === "string" ? profile.displayName : fallback.displayName,
+      legalName: typeof profile.legalName === "string" ? profile.legalName : fallback.legalName,
+      workEmail: typeof profile.workEmail === "string" ? profile.workEmail : fallback.workEmail,
+      workPhone: typeof profile.workPhone === "string" ? profile.workPhone : fallback.workPhone,
+      jobTitle: typeof profile.jobTitle === "string" ? profile.jobTitle : fallback.jobTitle,
+      department: typeof profile.department === "string" ? profile.department : fallback.department,
+    };
   } catch {
     return fallback;
   }
 }
 
-export function clearInviteStaffDraft(identity = ""): void {
-  window.sessionStorage.removeItem(staffDraftKey(identity));
+export function clearInviteStaffDraft(subjectId = ""): void {
+  const owner = draftSubject(subjectId);
+  if (!owner) return;
+  inviteDraftMemory.set(owner, null);
+  try {
+    window.sessionStorage.removeItem(staffDraftKey(owner));
+  } catch {
+    // Clearing in-memory ownership must still complete when storage is unavailable.
+  }
 }
 
 export async function completeCurrentStaffProfile(
@@ -121,25 +158,14 @@ function emptyToNull(value: string): string | null {
   return value.trim() || null;
 }
 
-function staffDraftKey(identity: string): string {
-  const account = identity.trim().toLowerCase() || "anonymous";
-  return `${INVITE_STAFF_DRAFT_KEY}:${encodeURIComponent(account)}`;
+function staffDraftKey(subjectId: string): string {
+  return `${INVITE_STAFF_DRAFT_KEY}:${subjectId}`;
 }
 
-function readCompatibleLegacyDraft(identity: string): string | null {
-  const legacy = window.sessionStorage.getItem(LEGACY_INVITE_STAFF_DRAFT_KEY);
-  if (!legacy || !identity.trim()) return null;
-
-  try {
-    const parsed = JSON.parse(legacy) as Partial<StaffProfileDraft>;
-    if (parsed.workEmail?.trim().toLowerCase() !== identity.trim().toLowerCase()) {
-      return null;
-    }
-
-    window.sessionStorage.removeItem(LEGACY_INVITE_STAFF_DRAFT_KEY);
-    window.sessionStorage.setItem(staffDraftKey(identity), legacy);
-    return legacy;
-  } catch {
-    return null;
-  }
+function draftSubject(value: string): string | null {
+  // Legacy username-only entries have no authenticated owner binding. Keep
+  // them untouched and never infer their owner from a reusable display label.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value.toLowerCase()
+    : null;
 }

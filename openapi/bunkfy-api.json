@@ -15042,6 +15042,73 @@
         }
       }
     },
+    "/api/workspace-staff-enrollment/applications/summary": {
+      "get": {
+        "tags": [
+          "Workspace Staff Enrollment"
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceStaffOnboardingSummaryListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspace-staff-enrollment/applications/{applicationId}/review": {
+      "get": {
+        "tags": [
+          "Workspace Staff Enrollment"
+        ],
+        "parameters": [
+          {
+            "name": "applicationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceStaffOnboardingDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspace-staff-enrollment/applications/{applicationId}/retry": {
       "post": {
         "tags": [
@@ -28643,6 +28710,55 @@
         "type": "integer",
         "format": "int32"
       },
+      "WorkspaceStaffOnboardingActionableSummaryDto": {
+        "type": "object",
+        "properties": {
+          "applicationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceKind": {
+            "$ref": "#/components/schemas/WorkspaceStaffOnboardingSourceKind"
+          },
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "claimId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "claimVersion": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkspaceStaffOnboardingStatus"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failureCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastChangedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hasStaffTarget": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "WorkspaceStaffOnboardingDataRightsCorrectionReceiptDto": {
         "type": "object",
         "properties": {
@@ -29011,6 +29127,30 @@
         ],
         "type": "integer",
         "format": "int32"
+      },
+      "WorkspaceStaffOnboardingSummaryListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceStaffOnboardingActionableSummaryDto"
+            },
+            "nullable": true
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
       }
     }
   },
