@@ -1,3 +1,4 @@
+import { applicationUrl, applicationPath } from "./app/deploymentBase";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -33,16 +34,16 @@ async function bootstrap() {
   installStationHandoff(async setupGrantId => {
     await queryClient.cancelQueries();
     queryClient.clear();
-    window.history.replaceState(null, "", "/station");
+    window.history.replaceState(null, "", applicationUrl("/station"));
     appRoot.render(<StrictMode><RenderErrorBoundary fallback={<ApplicationRenderFailure />}>
       <StationPage setupGrantId={setupGrantId} />
     </RenderErrorBoundary></StrictMode>);
   });
-  if (isStationPath(window.location.pathname)) {
+  if (isStationPath(applicationPath(window.location.pathname))) {
     appRoot.render(<StrictMode><RenderErrorBoundary fallback={<ApplicationRenderFailure />}>
       {capabilities.staffPinEnabled ? <StationPage /> : <main className="mx-auto max-w-xl p-6">
         <h1 className="text-xl font-semibold">Shared stations are not enabled</h1>
-        <p className="my-4">Ask your manager to check the station setup.</p><a className="btn btn-outline" href="/">Back to BunkFy</a>
+        <p className="my-4">Ask your manager to check the station setup.</p><a className="btn btn-outline" href={applicationUrl("/")}>Back to BunkFy</a>
       </main>}
     </RenderErrorBoundary></StrictMode>);
     return;
@@ -52,7 +53,7 @@ async function bootstrap() {
       <RenderErrorBoundary fallback={<ApplicationRenderFailure />}>
         <ProductCapabilitiesProvider capabilities={capabilities}>
           <QueryClientProvider client={queryClient}>
-            <BrowserRouter>
+            <BrowserRouter basename={import.meta.env.BASE_URL}>
               <SharedAccountRoot>
                 <App />
               </SharedAccountRoot>

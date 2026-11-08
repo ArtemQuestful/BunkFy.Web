@@ -1,3 +1,4 @@
+import { applicationUrl } from "../../app/deploymentBase";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -151,7 +152,7 @@ export function JoinWorkspacePage() {
       forgetPendingEnrollment(pendingSourceId, subjectId);
       setPendingApproval(false);
       clearPreservedWorkspaceJoinContext(secret);
-      window.history.replaceState(null, "", "/");
+      window.history.replaceState(null, "", applicationUrl("/"));
       navigate("/", { replace: true });
     },
   });
@@ -278,7 +279,7 @@ export function JoinWorkspacePage() {
         outcome.claim.status === "expired" ? "expired" : "withdrawn",
       );
       clearPreservedWorkspaceJoinContext(secret);
-      window.history.replaceState(null, "", "/join");
+      window.history.replaceState(null, "", applicationUrl("/join"));
       void staffApplication.refetch();
     },
     onError: () => {
@@ -326,7 +327,7 @@ export function JoinWorkspacePage() {
       setPendingApproval(false);
       setWithdrawalResolution("withdrawn");
       clearPreservedWorkspaceJoinContext(secret);
-      window.history.replaceState(null, "", "/join");
+      window.history.replaceState(null, "", applicationUrl("/join"));
       return;
     }
 
@@ -335,7 +336,7 @@ export function JoinWorkspacePage() {
       setPendingApproval(false);
       setWithdrawalResolution("expired");
       clearPreservedWorkspaceJoinContext(secret);
-      window.history.replaceState(null, "", "/join");
+      window.history.replaceState(null, "", applicationUrl("/join"));
       return;
     }
 

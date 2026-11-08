@@ -1,3 +1,4 @@
+import { applicationPath } from "../../app/deploymentBase";
 import {
   BedDouble,
   Blocks,
@@ -610,10 +611,10 @@ export function CalendarWeekView({
       const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
       if (!link) return;
       const destination = new URL(link.href, window.location.origin);
-      if (destination.pathname !== "/spaces" || destination.searchParams.get("surfaceReturn") !== "calendar") return;
+      if (applicationPath(destination.pathname) !== "/spaces" || destination.searchParams.get("surfaceReturn") !== "calendar") return;
       event.preventDefault();
       writeCalendarViewport(destination.searchParams, viewport ? position.current : undefined, "surfaceReturnViewport");
-      navigate(`${destination.pathname}?${destination.searchParams}`);
+      navigate(`${applicationPath(destination.pathname)}?${destination.searchParams}`);
     }}>
       {coverage && <CalendarCoverageStatus coverage={coverage} viewportFrozen={viewportFrozen} selectedDate={selectedDate} onShowSelectedDay={() => onSelectDay(selectedDate)} />}
       <CalendarScheduleLegend availability={legendAvailability} />

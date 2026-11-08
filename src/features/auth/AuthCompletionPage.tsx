@@ -1,3 +1,4 @@
+import { applicationUrl } from "../../app/deploymentBase";
 import { AlertTriangle, CheckCircle2, LoaderCircle } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
@@ -61,7 +62,7 @@ export function AuthCompletionPage() {
     )
       .then((completion) => {
         if (completion.kind === "redirect") {
-          window.location.replace(workspaceJoinAuthenticationDestination(completion.destination));
+          window.location.replace(applicationUrl(workspaceJoinAuthenticationDestination(completion.destination)));
           return;
         }
         setMultiFactor({
@@ -97,7 +98,7 @@ export function AuthCompletionPage() {
         verificationCode,
         multiFactor.username,
       );
-      window.location.replace(workspaceJoinAuthenticationDestination("/"));
+      window.location.replace(applicationUrl(workspaceJoinAuthenticationDestination("/")));
     } catch (cause) {
       setError(publicAuthenticationErrorMessage(
         cause,
@@ -136,7 +137,7 @@ export function AuthCompletionPage() {
               onSubmit={completeMultiFactor}
               onCancel={() => {
                 cancelExternalAuthentication();
-                window.location.replace(workspaceJoinAuthenticationDestination("/"));
+                window.location.replace(applicationUrl(workspaceJoinAuthenticationDestination("/")));
               }}
             />
           </div>
@@ -151,7 +152,7 @@ export function AuthCompletionPage() {
             </p>
             <a
               className="btn btn-primary mt-6 w-full"
-              href={session ? "/account" : "/"}
+              href={applicationUrl(session ? "/account" : "/")}
               onClick={cancelExternalAuthentication}
             >
               Return to BunkFy

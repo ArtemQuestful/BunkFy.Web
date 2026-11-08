@@ -5,6 +5,8 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
+ARG VITE_PUBLIC_BASE_PATH=/
+ENV VITE_PUBLIC_BASE_PATH=$VITE_PUBLIC_BASE_PATH
 ARG VITE_BUNKFY_API_BASE_URL=/
 ENV VITE_BUNKFY_API_BASE_URL=$VITE_BUNKFY_API_BASE_URL
 RUN pnpm build

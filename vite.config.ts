@@ -8,11 +8,12 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = env.BUNKFY_DEV_PROXY_TARGET?.trim();
 
   return {
+    base: process.env.VITE_PUBLIC_BASE_PATH || env.VITE_PUBLIC_BASE_PATH || "/",
     plugins: [react(), tailwindcss()],
     test: {
-      // Each native suite owns Vite and Chromium. Bound Windows concurrency
-      // after observed ERR_NO_BUFFER_SPACE failures in parallel browser suites.
-      maxWorkers: process.platform === "win32" ? 1 : 2,
+      // Each native suite starts Vite and Chromium. Keep CI browser fixtures
+      // from competing for CPU; Windows also needs bounded socket use.
+      maxWorkers: process.env.CI || process.platform === "win32" ? 1 : 2,
     },
     server: {
       host: "0.0.0.0",

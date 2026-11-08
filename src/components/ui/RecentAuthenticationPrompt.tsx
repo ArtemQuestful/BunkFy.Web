@@ -1,3 +1,4 @@
+import { applicationUrl } from "../../app/deploymentBase";
 import { KeyRound } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { useSession } from "../../app/session";
@@ -41,7 +42,7 @@ export function RecentAuthenticationPrompt({
     <div className="rounded-lg border border-warning/30 bg-warning/8 p-4">
       <p className="text-sm font-semibold">A different sign-in method is required</p>
       <p className="mt-1 text-xs leading-5">Sign in with the method required for this action, then try again.</p>
-      <a className="link mt-2 inline-block text-sm" href="/account?section=security">Account security</a>
+      <a className="link mt-2 inline-block text-sm" href={applicationUrl("/account?section=security")}>Account security</a>
     </div>
   );
 
@@ -92,7 +93,7 @@ export function RecentAuthenticationPrompt({
                   onChange={event => setCode(event.target.value)} autoComplete="one-time-code"
                   inputMode={codeType === "totp" ? "numeric" : "text"} required disabled={submitting} />
               </label>
-              <p className="text-xs leading-5 text-base-content/55">Use your current password and an authenticator or unused recovery code. <a className="link" href="/account?section=security">Set up or manage MFA</a></p>
+              <p className="text-xs leading-5 text-base-content/55">Use your current password and an authenticator or unused recovery code. <a className="link" href={applicationUrl("/account?section=security")}>Set up or manage MFA</a></p>
             </>}
             <div className="flex flex-wrap gap-2"><button
               type="submit"

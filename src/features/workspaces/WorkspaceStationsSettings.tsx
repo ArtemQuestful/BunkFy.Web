@@ -1,3 +1,4 @@
+import { applicationUrl } from "../../app/deploymentBase";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { KeyRound, Monitor, ShieldCheck } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
@@ -374,7 +375,7 @@ function StationsManager({ propertyId, propertyName }: { propertyId: string; pro
       </FormSection>
     </>}
     <FormSection title="Using your own PIN" icon={<KeyRound size={18} />}>
-      <p className="text-sm leading-6">Set or change your linked staff PIN in <a className="link" href="/account?section=security">Account → Security</a>. Recover a forgotten linked PIN with a new multi-factor sign-in. Never ask another staff member to share theirs.</p>
+      <p className="text-sm leading-6">Set or change your linked staff PIN in <a className="link" href={applicationUrl("/account?section=security")}>Account → Security</a>. Recover a forgotten linked PIN with a new multi-factor sign-in. Never ask another staff member to share theirs.</p>
     </FormSection>
   </div>;
 }

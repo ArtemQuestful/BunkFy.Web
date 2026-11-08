@@ -1,3 +1,4 @@
+import { warmNativeFixture } from "./support/warmNativeFixture";
 import { launchNativeChromium } from "./support/nativeChromium";
 import { createServer, normalizePath, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
@@ -69,6 +70,7 @@ describe("Staff page with the actual permission registry", () => {
     page.on("pageerror", error => runtimeErrors.push(error.message));
     page.on("console", message => { if (message.type() === "error") runtimeErrors.push(message.text()); });
     try {
+      await warmNativeFixture(browser, integrated.resolvedUrls!.local[0] + "__staff-integrated");
       await page.goto(integrated.resolvedUrls!.local[0] + "__staff-integrated" + (sequence ? "?sequence=1" : ""));
       await page.getByRole("heading", { name: /^Current work locations/ }).waitFor({ timeout: 6000 });
       if (sequence) {
@@ -195,6 +197,7 @@ beforeAll(async () => {
     }], server: { host: "127.0.0.1", port: 0 },
   });
   await server.listen(); origin = server.resolvedUrls!.local[0]; browser = await launchNativeChromium();
+  await warmNativeFixture(browser, new URL("/__staff-assignment", origin).href);
 }, 60000);
 afterAll(async () => { await browser?.close(); await server?.close(); expect(errors).toEqual([]); });
 async function open(width = 320, query = "") {

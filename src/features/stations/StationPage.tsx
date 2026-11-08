@@ -1,3 +1,4 @@
+import { applicationUrl } from "../../app/deploymentBase";
 import { ArrowLeft, Check, KeyRound, LockKeyhole, RefreshCw, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { PinFields } from "./PinFields";
@@ -339,13 +340,13 @@ export function StationPage({ setupGrantId }: { setupGrantId?: string }) {
       <div className="flex flex-wrap gap-3">
         <button ref={recoveryButton} className="btn btn-outline" disabled={pending || now < retryAt} onClick={() => { remoteHold.current = false; focusIntent.current = "search"; void (localLock.current ? lock() : refresh(true)); }}>
           <RefreshCw size={16} /> {localLock.current ? "Retry locking" : "Refresh station"}</button>
-        <a href="/workspace?section=stations" className="btn btn-ghost">Manager setup</a>
+        <a href={applicationUrl("/workspace?section=stations")} className="btn btn-ghost">Manager setup</a>
       </div>
     </section>}
     {view?.runtime.state === stationState.securing && <section className="max-w-xl space-y-4">
       <h2 className="text-lg font-semibold">Finish securing this browser</h2>
       <p className="text-sm leading-6">The manager’s original account session must end before staff can use this station. No guest information is available here yet.</p>
-      <a className="btn btn-outline" href="/workspace?section=stations">Return to manager setup</a>
+      <a className="btn btn-outline" href={applicationUrl("/workspace?section=stations")}>Return to manager setup</a>
       <button className="btn btn-ghost" onClick={() => void refresh()}>Check again</button>
     </section>}
     {locked && setup && <section className="mx-auto max-w-xl rounded-lg border border-base-300 bg-base-100 p-5 sm:p-6">

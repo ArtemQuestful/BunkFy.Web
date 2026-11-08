@@ -1,3 +1,4 @@
+import { applicationUrl } from "../../app/deploymentBase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -810,7 +811,7 @@ function SettingsError({ error }: { error: unknown }) {
 }
 
 function joinUrl(link: Pick<IssuedJoinLink, "kind" | "token">): string {
-  const url = new URL("/join", window.location.origin);
+  const url = new URL(applicationUrl("/join"), window.location.origin);
   url.hash = new URLSearchParams({ [link.kind]: link.token }).toString();
   return url.toString();
 }

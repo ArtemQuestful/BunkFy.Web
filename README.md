@@ -42,3 +42,17 @@ Mounted OpenID Connect providers are discovered from the API. Their browser chal
 ## Documentation
 
 Start with [docs/README.md](docs/README.md).
+
+## Hosting under a URL prefix
+
+The default public path is `/`. To build for a path such as `/example/`, set
+`VITE_PUBLIC_BASE_PATH=/example/`. Configure `VITE_BUNKFY_API_BASE_URL` for the API's
+public address; `/example/` works when the reverse proxy exposes the API at that
+same prefix. The Docker build accepts both values as build arguments.
+
+Client navigation, invitation links, station handoffs and external-auth return
+URLs retain the configured public prefix. Configure the reverse proxy to strip
+the prefix before forwarding to the frontend container, and keep backend proxy
+routing, refresh-cookie paths and external-auth return configuration consistent
+with the chosen public URLs. Colocated applications need distinct refresh-cookie
+paths.

@@ -1,3 +1,4 @@
+import { applicationUrl } from "./deploymentBase";
 import {
   createContext,
   useCallback,
@@ -1070,7 +1071,7 @@ type PendingExternalAuth = {
 };
 
 function externalReturnUrl(intent: PendingExternalAuth["intent"]): string {
-  const url = new URL("/auth/complete", window.location.origin);
+  const url = new URL(applicationUrl("/auth/complete"), window.location.origin);
   url.searchParams.set("intent", intent);
   const apiBaseUrl = resolveApiBaseUrl();
   const apiOrigin = apiBaseUrl

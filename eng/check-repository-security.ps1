@@ -145,7 +145,7 @@ foreach ($token in @(
     $expectedBaselineReference,
     'exception-file: .gma/security-exceptions.json',
     'security-events: write',
-    'github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26',
+    'github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066',
     'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
     'retention-days: 30',
     'if-no-files-found: error')) {

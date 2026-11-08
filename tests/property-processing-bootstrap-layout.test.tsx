@@ -1,3 +1,4 @@
+import { warmNativeFixture } from "./support/warmNativeFixture";
 import { launchNativeChromium } from "./support/nativeChromium";
 import { createServer, normalizePath, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
@@ -83,6 +84,7 @@ beforeAll(async () => {
     }], server: { host: "127.0.0.1", port: 0 },
   });
   await server.listen(); origin = server.resolvedUrls!.local[0]; browser = await launchNativeChromium();
+  await warmNativeFixture(browser, new URL("/__property-processing", origin).href);
 }, 60000);
 afterAll(async () => { await browser?.close(); await server?.close(); expect(runtimeErrors).toEqual([]); });
 
